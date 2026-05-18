@@ -9,38 +9,200 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TripsRouteImport } from './routes/trips'
+import { Route as StatsRouteImport } from './routes/stats'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RemoteRouteImport } from './routes/remote'
+import { Route as GeofenceRouteImport } from './routes/geofence'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TripsIdRouteImport } from './routes/trips.$id'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as AuthLoginRouteImport } from './routes/auth.login'
 
+const TripsRoute = TripsRouteImport.update({
+  id: '/trips',
+  path: '/trips',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RemoteRoute = RemoteRouteImport.update({
+  id: '/remote',
+  path: '/remote',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GeofenceRoute = GeofenceRouteImport.update({
+  id: '/geofence',
+  path: '/geofence',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TripsIdRoute = TripsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => TripsRoute,
+} as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/auth/login',
+  path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
+  '/geofence': typeof GeofenceRoute
+  '/remote': typeof RemoteRoute
+  '/settings': typeof SettingsRoute
+  '/stats': typeof StatsRoute
+  '/trips': typeof TripsRouteWithChildren
+  '/auth/login': typeof AuthLoginRoute
+  '/share/$token': typeof ShareTokenRoute
+  '/trips/$id': typeof TripsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
+  '/geofence': typeof GeofenceRoute
+  '/remote': typeof RemoteRoute
+  '/settings': typeof SettingsRoute
+  '/stats': typeof StatsRoute
+  '/trips': typeof TripsRouteWithChildren
+  '/auth/login': typeof AuthLoginRoute
+  '/share/$token': typeof ShareTokenRoute
+  '/trips/$id': typeof TripsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
+  '/geofence': typeof GeofenceRoute
+  '/remote': typeof RemoteRoute
+  '/settings': typeof SettingsRoute
+  '/stats': typeof StatsRoute
+  '/trips': typeof TripsRouteWithChildren
+  '/auth/login': typeof AuthLoginRoute
+  '/share/$token': typeof ShareTokenRoute
+  '/trips/$id': typeof TripsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/alerts'
+    | '/geofence'
+    | '/remote'
+    | '/settings'
+    | '/stats'
+    | '/trips'
+    | '/auth/login'
+    | '/share/$token'
+    | '/trips/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/alerts'
+    | '/geofence'
+    | '/remote'
+    | '/settings'
+    | '/stats'
+    | '/trips'
+    | '/auth/login'
+    | '/share/$token'
+    | '/trips/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/alerts'
+    | '/geofence'
+    | '/remote'
+    | '/settings'
+    | '/stats'
+    | '/trips'
+    | '/auth/login'
+    | '/share/$token'
+    | '/trips/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AlertsRoute: typeof AlertsRoute
+  GeofenceRoute: typeof GeofenceRoute
+  RemoteRoute: typeof RemoteRoute
+  SettingsRoute: typeof SettingsRoute
+  StatsRoute: typeof StatsRoute
+  TripsRoute: typeof TripsRouteWithChildren
+  AuthLoginRoute: typeof AuthLoginRoute
+  ShareTokenRoute: typeof ShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/trips': {
+      id: '/trips'
+      path: '/trips'
+      fullPath: '/trips'
+      preLoaderRoute: typeof TripsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/remote': {
+      id: '/remote'
+      path: '/remote'
+      fullPath: '/remote'
+      preLoaderRoute: typeof RemoteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/geofence': {
+      id: '/geofence'
+      path: '/geofence'
+      fullPath: '/geofence'
+      preLoaderRoute: typeof GeofenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +210,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/trips/$id': {
+      id: '/trips/$id'
+      path: '/$id'
+      fullPath: '/trips/$id'
+      preLoaderRoute: typeof TripsIdRouteImport
+      parentRoute: typeof TripsRoute
+    }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/auth/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface TripsRouteChildren {
+  TripsIdRoute: typeof TripsIdRoute
+}
+
+const TripsRouteChildren: TripsRouteChildren = {
+  TripsIdRoute: TripsIdRoute,
+}
+
+const TripsRouteWithChildren = TripsRoute._addFileChildren(TripsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AlertsRoute: AlertsRoute,
+  GeofenceRoute: GeofenceRoute,
+  RemoteRoute: RemoteRoute,
+  SettingsRoute: SettingsRoute,
+  StatsRoute: StatsRoute,
+  TripsRoute: TripsRouteWithChildren,
+  AuthLoginRoute: AuthLoginRoute,
+  ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
