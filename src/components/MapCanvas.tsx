@@ -30,20 +30,57 @@ const SATELLITE_STYLE: StyleSpecification = {
   layers: [{ id: "sat", type: "raster", source: "sat" }],
 };
 
+interface LatLng { lat: number; lng: number }
+
 interface Props {
   center: [number, number];
   heading?: number;
-  trail?: Array<{ lat: number; lng: number }>;
+  trail?: Array<LatLng>;
+  /** Optional full route shown dimmed beneath the live trail (used for replay). */
+  fullPath?: Array<LatLng>;
+  /** Optional start/end pins. */
+  startPoint?: LatLng;
+  endPoint?: LatLng;
+  /** Auto-fit bounds to fullPath on first load. */
+  fitToPath?: boolean;
   style?: "streets" | "satellite";
   followVehicle?: boolean;
   className?: string;
 }
 
-export function MapCanvas({ center, heading = 0, trail = [], style = "streets", followVehicle = true, className }: Props) {
+function makePin(color: string, label: string) {
+  const el = document.createElement("div");
+  el.innerHTML = `
+    <div style="position:relative;width:28px;height:36px;">
+      <div style="position:absolute;inset:0;display:grid;place-items:center;">
+        <svg width="28" height="36" viewBox="0 0 28 36" fill="none">
+          <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 22 14 22s14-11.5 14-22C28 6.27 21.73 0 14 0z" fill="${color}"/>
+          <circle cx="14" cy="14" r="5" fill="#07080F"/>
+        </svg>
+      </div>
+      <div style="position:absolute;top:8px;left:0;right:0;text-align:center;font:600 10px/1 ui-sans-serif,system-ui;color:#fff;">${label}</div>
+    </div>`;
+  return el;
+}
+
+export function MapCanvas({
+  center,
+  heading = 0,
+  trail = [],
+  fullPath,
+  startPoint,
+  endPoint,
+  fitToPath = false,
+  style = "streets",
+  followVehicle = true,
+  className,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const markerRef = useRef<HTMLDivElement | null>(null);
   const markerInstance = useRef<maplibregl.Marker | null>(null);
+  const pinsRef = useRef<maplibregl.Marker[]>([]);
+  const fittedRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -57,7 +94,6 @@ export function MapCanvas({ center, heading = 0, trail = [], style = "streets", 
     });
     mapRef.current = map;
 
-    // create custom marker
     const el = document.createElement("div");
     el.innerHTML = `
       <div style="position:relative;width:48px;height:48px;display:grid;place-items:center;">
@@ -75,65 +111,123 @@ export function MapCanvas({ center, heading = 0, trail = [], style = "streets", 
       .addTo(map);
 
     map.on("load", () => {
-      map.addSource("trail", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
+      map.addSource("full-path", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "full-path-line",
+        type: "line",
+        source: "full-path",
+        paint: {
+          "line-color": "#5a6378",
+          "line-width": 3,
+          "line-opacity": 0.45,
+          "line-dasharray": [2, 1.5],
+        },
+        layout: { "line-cap": "round", "line-join": "round" },
       });
+
+      map.addSource("trail", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({
         id: "trail-line",
         type: "line",
         source: "trail",
         paint: {
           "line-color": "#00D4FF",
-          "line-width": 3,
-          "line-opacity": 0.7,
-          "line-blur": 0.5,
+          "line-width": 4,
+          "line-opacity": 0.9,
+          "line-blur": 0.4,
         },
         layout: { "line-cap": "round", "line-join": "round" },
       });
     });
 
     return () => {
+      pinsRef.current.forEach((m) => m.remove());
+      pinsRef.current = [];
       map.remove();
       mapRef.current = null;
+      fittedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [style]);
 
-  // update marker position + heading
+  // marker
   useEffect(() => {
-    if (markerInstance.current) {
-      markerInstance.current.setLngLat([center[1], center[0]]);
-    }
+    if (markerInstance.current) markerInstance.current.setLngLat([center[1], center[0]]);
     if (markerRef.current) {
       const svg = markerRef.current.querySelector("svg");
       if (svg) (svg as SVGElement).style.transform = `rotate(${heading}deg)`;
     }
     if (followVehicle && mapRef.current) {
-      mapRef.current.easeTo({ center: [center[1], center[0]], duration: 800 });
+      mapRef.current.easeTo({ center: [center[1], center[0]], duration: 500 });
     }
   }, [center, heading, followVehicle]);
 
-  // update trail
+  // trail (traveled portion)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const src = map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
-    if (!src) return;
-    src.setData({
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "LineString",
-            coordinates: trail.map((p) => [p.lng, p.lat]),
-          },
-        },
-      ],
-    });
+    if (!map) return;
+    const apply = () => {
+      const src = map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      src.setData({
+        type: "FeatureCollection",
+        features: [{
+          type: "Feature", properties: {},
+          geometry: { type: "LineString", coordinates: trail.map((p) => [p.lng, p.lat]) },
+        }],
+      });
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
   }, [trail]);
+
+  // full path (dimmed)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const src = map.getSource("full-path") as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      src.setData({
+        type: "FeatureCollection",
+        features: fullPath && fullPath.length > 1 ? [{
+          type: "Feature", properties: {},
+          geometry: { type: "LineString", coordinates: fullPath.map((p) => [p.lng, p.lat]) },
+        }] : [],
+      });
+
+      if (fitToPath && !fittedRef.current && fullPath && fullPath.length > 1) {
+        const bounds = fullPath.reduce(
+          (b, p) => b.extend([p.lng, p.lat]),
+          new maplibregl.LngLatBounds([fullPath[0].lng, fullPath[0].lat], [fullPath[0].lng, fullPath[0].lat]),
+        );
+        map.fitBounds(bounds, { padding: 80, duration: 600, maxZoom: 15 });
+        fittedRef.current = true;
+      }
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [fullPath, fitToPath]);
+
+  // start/end pins
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    pinsRef.current.forEach((m) => m.remove());
+    pinsRef.current = [];
+    if (startPoint) {
+      pinsRef.current.push(
+        new maplibregl.Marker({ element: makePin("#10F58F", "A"), anchor: "bottom" })
+          .setLngLat([startPoint.lng, startPoint.lat]).addTo(map),
+      );
+    }
+    if (endPoint) {
+      pinsRef.current.push(
+        new maplibregl.Marker({ element: makePin("#FF3B30", "B"), anchor: "bottom" })
+          .setLngLat([endPoint.lng, endPoint.lat]).addTo(map),
+      );
+    }
+  }, [startPoint, endPoint]);
 
   return <div ref={containerRef} className={className ?? "absolute inset-0"} />;
 }
