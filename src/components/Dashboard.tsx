@@ -23,6 +23,7 @@ import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
 import { MapCanvas } from "./MapCanvas";
 import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { confirm, notify } from "./ConfirmDialog";
 
 export function Dashboard() {
   const {
@@ -288,8 +289,21 @@ function VitalsPanel() {
             </div>
             <div className="text-[11px] text-[var(--text-secondary)]">PIN requis</div>
           </div>
-          <button className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/10 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/20 transition-colors font-medium">
-            Couper
+          <button
+            onClick={async () => {
+              const ok = await confirm({
+                title: t.engineOn ? "Couper le moteur ?" : "Remettre en marche ?",
+                description: t.engineOn
+                  ? "Le moteur sera immédiatement coupé. Assurez-vous que la moto est à l'arrêt."
+                  : "Le démarrage moteur sera autorisé à distance.",
+                tone: t.engineOn ? "danger" : "warning",
+                confirmLabel: t.engineOn ? "Couper" : "Démarrer",
+              });
+              if (ok) await notify({ title: "Commande envoyée", description: "L'appareil applique la commande.", tone: "success" });
+            }}
+            className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/10 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/20 transition-colors font-medium"
+          >
+            {t.engineOn ? "Couper" : "Démarrer"}
           </button>
         </div>
       </div>
@@ -492,7 +506,7 @@ function LiveTab() {
           </div>
           <div>
             <div className="text-[var(--text-secondary)]">Dernier</div>
-            <div className="text-[var(--text-primary)]">
+            <div className="text-[var(--text-primary)]" suppressHydrationWarning>
               {new Date(t.timestamp).toLocaleTimeString("fr-FR")}
             </div>
           </div>
@@ -525,7 +539,7 @@ function TripsTab() {
       {trips.map((t) => (
         <div key={t.id} className="card-elev p-3 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer">
           <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
-            <span>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
+            <span suppressHydrationWarning>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
             <span>{t.distanceKm} km</span>
           </div>
           <div className="text-xs truncate">{t.endAddress}</div>
@@ -565,7 +579,7 @@ function AlertsTab({ alerts }: { alerts: Array<{ id: string; type: string; title
           <Bell className="size-4 shrink-0 mt-0.5" style={{ color: sevColor[a.severity] }} />
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium truncate">{a.title}</div>
-            <div className="text-[10px] mono text-[var(--text-secondary)]">{relTime(a.timestamp)}</div>
+            <div className="text-[10px] mono text-[var(--text-secondary)]" suppressHydrationWarning>{relTime(a.timestamp)}</div>
           </div>
         </div>
       ))}
