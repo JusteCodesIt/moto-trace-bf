@@ -506,7 +506,7 @@ function LiveTab() {
           </div>
           <div>
             <div className="text-[var(--text-secondary)]">Dernier</div>
-            <div className="text-[var(--text-primary)]">
+            <div className="text-[var(--text-primary)]" suppressHydrationWarning>
               {new Date(t.timestamp).toLocaleTimeString("fr-FR")}
             </div>
           </div>
