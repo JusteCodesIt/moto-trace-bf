@@ -579,7 +579,7 @@ function AlertsTab({ alerts }: { alerts: Array<{ id: string; type: string; title
           <Bell className="size-4 shrink-0 mt-0.5" style={{ color: sevColor[a.severity] }} />
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium truncate">{a.title}</div>
-            <div className="text-[10px] mono text-[var(--text-secondary)]">{relTime(a.timestamp)}</div>
+            <div className="text-[10px] mono text-[var(--text-secondary)]" suppressHydrationWarning>{relTime(a.timestamp)}</div>
           </div>
         </div>
       ))}
