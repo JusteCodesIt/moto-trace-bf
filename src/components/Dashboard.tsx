@@ -539,7 +539,7 @@ function TripsTab() {
       {trips.map((t) => (
         <div key={t.id} className="card-elev p-3 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer">
           <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
-            <span>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
+            <span suppressHydrationWarning>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
             <span>{t.distanceKm} km</span>
           </div>
           <div className="text-xs truncate">{t.endAddress}</div>
