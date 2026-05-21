@@ -71,38 +71,44 @@
 :root {
   color-scheme: dark;
 
-  --bg-base: #07080F;
-  --bg-surface: #0F1120;
-  --bg-elevated: #161829;
+  /* Base — fond sombre bleuté pour faire ressortir le bleu roi */
+  --bg-base: #060B1F;
+  --bg-surface: #0C1430;
+  --bg-elevated: #142048;
 
-  --accent-primary: #FF6B35;
-  --accent-cyan: #00D4FF;
-  --accent-green: #00E676;
-  --accent-red: #FF3D57;
-  --accent-amber: #FFB300;
-  --accent-violet: #7C6EF7;
+  /* Palette principale — Bleu roi, Cyan, Jaune vif, Blanc lacté, Chromé */
+  --accent-primary: #1E40FF;   /* Bleu roi */
+  --accent-cyan:    #22D3FF;   /* Cyan électrique */
+  --accent-yellow:  #FFE600;   /* Jaune vif */
+  --accent-chrome:  #C8CFDA;   /* Chromé */
+  --accent-milk:    #F4F1EA;   /* Blanc lacté */
 
-  --text-primary: #F0F2FF;
-  --text-secondary: #7B80A0;
-  --text-dim: #3D4260;
+  /* Statuts — alignés sur la nouvelle palette */
+  --accent-green: #22D3FF;     /* succès = cyan */
+  --accent-red:   #FF3D57;     /* danger conservé pour lisibilité */
+  --accent-amber: var(--accent-yellow);
+  --accent-violet: #6E8BFF;
 
-  --border: #1E2140;
-  --border-active: #2E3460;
-  --glass: rgba(15, 17, 32, 0.85);
+  --text-primary:   #F4F1EA;   /* Blanc lacté */
+  --text-secondary: #8A93AE;   /* Chromé désaturé */
+  --text-dim:       #4A5170;
+
+  --border:        #1C2658;
+  --border-active: #2E3C8A;
+  --glass: rgba(12, 20, 48, 0.85);
 
   --radius: 14px;
 
   --shadow-1: 0 0 0 1px var(--border);
-  --shadow-2: 0 0 0 1px var(--border), 0 8px 32px rgba(0,0,0,0.5);
-  --shadow-3: 0 0 0 1px var(--border-active), 0 24px 64px rgba(0,0,0,0.7);
+  --shadow-2: 0 0 0 1px var(--border), 0 8px 32px rgba(0,0,0,0.55);
+  --shadow-3: 0 0 0 1px var(--border-active), 0 24px 64px rgba(0,0,0,0.75);
 }
 
 .dark {
-  /* identical — app is dark-only */
-  --bg-base: #07080F;
-  --bg-surface: #0F1120;
-  --bg-elevated: #161829;
-  --text-primary: #F0F2FF;
+  --bg-base: #060B1F;
+  --bg-surface: #0C1430;
+  --bg-elevated: #142048;
+  --text-primary: #F4F1EA;
 }
 
 @layer base {
