@@ -223,6 +223,8 @@ function StatusDot({ online }: { online: boolean }) {
 
 function VitalsPanel() {
   const t = useApp((s) => s.telemetry);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <div className="p-4 space-y-5">
       {/* Vehicle */}
@@ -232,7 +234,7 @@ function VitalsPanel() {
             Véhicule
           </span>
           <span className="text-[10px] mono text-[var(--text-secondary)]">
-            MAJ {relTime(t.timestamp)}
+            {mounted ? `MAJ ${relTime(t.timestamp)}` : "MAJ —"}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
