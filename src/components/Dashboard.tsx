@@ -289,8 +289,21 @@ function VitalsPanel() {
             </div>
             <div className="text-[11px] text-[var(--text-secondary)]">PIN requis</div>
           </div>
-          <button className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/10 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/20 transition-colors font-medium">
-            Couper
+          <button
+            onClick={async () => {
+              const ok = await confirm({
+                title: t.engineOn ? "Couper le moteur ?" : "Remettre en marche ?",
+                description: t.engineOn
+                  ? "Le moteur sera immédiatement coupé. Assurez-vous que la moto est à l'arrêt."
+                  : "Le démarrage moteur sera autorisé à distance.",
+                tone: t.engineOn ? "danger" : "warning",
+                confirmLabel: t.engineOn ? "Couper" : "Démarrer",
+              });
+              if (ok) await notify({ title: "Commande envoyée", description: "L'appareil applique la commande.", tone: "success" });
+            }}
+            className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/10 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/20 transition-colors font-medium"
+          >
+            {t.engineOn ? "Couper" : "Démarrer"}
           </button>
         </div>
       </div>
