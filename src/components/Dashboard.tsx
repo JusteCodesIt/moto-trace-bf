@@ -23,6 +23,7 @@ import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
 import { MapCanvas } from "./MapCanvas";
 import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { confirm, notify } from "./ConfirmDialog";
 
 export function Dashboard() {
   const {
