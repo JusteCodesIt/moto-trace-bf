@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Sidebar, MobileNav } from "./Sidebar";
+import { ConfirmDialogHost } from "./ConfirmDialog";
 
 export function AppShell({ children, fullBleed = false }: { children: ReactNode; fullBleed?: boolean }) {
   return (
@@ -9,6 +10,7 @@ export function AppShell({ children, fullBleed = false }: { children: ReactNode;
         {children}
       </main>
       <MobileNav />
+      <ConfirmDialogHost />
     </div>
   );
 }
