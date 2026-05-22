@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Settings as SettingsIcon, Bell, Shield, Smartphone, User, Sliders } from "lucide-react";
+import { Settings as SettingsIcon, Bell, Shield, Smartphone, User, Sliders, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { PageHeader } from "@/components/PageHeader";
+import { SectionHero } from "@/components/SectionHero";
 import { useState } from "react";
+import { confirm, notify } from "@/components/ConfirmDialog";
+import illusSettings from "@/assets/illus-settings.png";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({ meta: [{ title: "Paramètres — MotoTrack BF" }] }),
@@ -22,43 +24,63 @@ function SettingsPage() {
 
   return (
     <AppShell>
-      <PageHeader title="Paramètres" subtitle="Notifications, anti-vol et compte" icon={SettingsIcon} />
+      <div className="p-4 md:p-8 pb-24 max-w-6xl mx-auto">
+        <SectionHero
+          eyebrow="Configuration"
+          icon={Sparkles}
+          title="Paramètres du compte & de l'appareil"
+          description="Contrôlez vos notifications, vos seuils d'alerte, votre code PIN anti-vol et la connectivité du module ESP32-S3 — tout est centralisé ici."
+          image={illusSettings}
+        />
 
-      <div className="p-4 md:p-8 pb-24 max-w-6xl mx-auto grid md:grid-cols-[220px_1fr] gap-6">
-        <nav className="space-y-1 md:sticky md:top-24 md:self-start">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActive(s.id)}
-              className={`w-full h-10 px-3 rounded-md flex items-center gap-3 text-sm transition-colors ${active === s.id ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]"}`}
-            >
-              <s.icon className="size-4" /> {s.label}
-            </button>
-          ))}
-        </nav>
+        <div className="grid md:grid-cols-[220px_1fr] gap-6">
+          <nav className="space-y-1 md:sticky md:top-4 md:self-start">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setActive(s.id)}
+                className={`w-full h-10 px-3 rounded-md flex items-center gap-3 text-sm transition-colors ${active === s.id ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]"}`}
+              >
+                <s.icon className="size-4" /> {s.label}
+              </button>
+            ))}
+          </nav>
 
-        <div className="space-y-4">
-          {active === "notif" && <NotifSection />}
-          {active === "thresholds" && <ThresholdsSection />}
-          {active === "antitheft" && <AntiTheftSection />}
-          {active === "device" && <Placeholder title="Appareil & connectivité" />}
-          {active === "account" && <Placeholder title="Compte & sécurité" />}
+          <div className="space-y-4">
+            {active === "notif" && <NotifSection />}
+            {active === "thresholds" && <ThresholdsSection />}
+            {active === "antitheft" && <AntiTheftSection />}
+            {active === "device" && <DeviceSection />}
+            {active === "account" && <AccountSection />}
+          </div>
         </div>
       </div>
     </AppShell>
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="card-elev p-5">
-      <h3 className="text-sm font-semibold mb-4">{title}</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {action}
+      </div>
       {children}
     </div>
   );
 }
 
 function NotifSection() {
+  const onTest = async () => {
+    const ok = await confirm({
+      title: "Envoyer une notification de test ?",
+      description: "Une notification push sera envoyée à cet appareil.",
+      tone: "info",
+      confirmLabel: "Envoyer",
+    });
+    if (ok) await notify({ title: "Notification envoyée", description: "Vérifiez votre centre de notifications.", tone: "success" });
+  };
   return (
     <>
       <Card title="Notifications push">
@@ -70,7 +92,7 @@ function NotifSection() {
             <div className="text-sm font-medium">Statut</div>
             <div className="text-xs text-[var(--accent-green)] mono">Activé · Chrome desktop</div>
           </div>
-          <button className="h-8 px-3 text-xs rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border-active)]">
+          <button onClick={onTest} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border-active)]">
             Tester
           </button>
         </div>
@@ -92,7 +114,7 @@ function NotifSection() {
             <div key={t} className="grid grid-cols-[1fr_repeat(3,80px)] gap-2 items-center py-2 border-b border-[var(--border)] last:border-0">
               <span className="text-sm">{t}</span>
               {["Push", "SMS", "Email"].map((c) => (
-                <Toggle key={c} label={c} checked={c !== "SMS"} />
+                <Toggle key={c} label={c} defaultChecked={c !== "SMS"} />
               ))}
             </div>
           ))}
@@ -103,8 +125,24 @@ function NotifSection() {
 }
 
 function ThresholdsSection() {
+  const onSave = async () => {
+    const ok = await confirm({
+      title: "Enregistrer les seuils ?",
+      description: "Les nouveaux seuils seront appliqués immédiatement au tracker.",
+      tone: "warning",
+      confirmLabel: "Enregistrer",
+    });
+    if (ok) await notify({ title: "Seuils mis à jour", tone: "success" });
+  };
   return (
-    <Card title="Seuils d'alerte">
+    <Card
+      title="Seuils d'alerte"
+      action={
+        <button onClick={onSave} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+          Enregistrer
+        </button>
+      }
+    >
       <div className="space-y-4">
         {[
           { label: "Limite vitesse", value: "90", unit: "km/h" },
@@ -129,49 +167,170 @@ function ThresholdsSection() {
 }
 
 function AntiTheftSection() {
+  const [pin, setPin] = useState(["", "", "", ""]);
+  const onSavePin = async () => {
+    if (pin.some((d) => d === "")) {
+      await notify({ title: "PIN incomplet", description: "Entrez les 4 chiffres.", tone: "warning" });
+      return;
+    }
+    const ok = await confirm({
+      title: "Définir ce nouveau PIN ?",
+      description: "Ce code sera requis pour les commandes moteur et la désactivation du suivi.",
+      tone: "danger",
+      confirmLabel: "Définir",
+    });
+    if (ok) {
+      await notify({ title: "PIN enregistré", tone: "success" });
+      setPin(["", "", "", ""]);
+    }
+  };
   return (
     <>
-      <Card title="Code PIN à 4 chiffres">
+      <Card
+        title="Code PIN à 4 chiffres"
+        action={
+          <button onClick={onSavePin} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+            Définir
+          </button>
+        }
+      >
         <p className="text-xs text-[var(--text-secondary)] mb-3">
           Requis pour les commandes moteur et la désactivation du suivi.
         </p>
         <div className="flex gap-2">
-          {[1, 2, 3, 4].map((i) => (
+          {pin.map((v, i) => (
             <input
               key={i}
               type="password"
               maxLength={1}
+              value={v}
+              onChange={(e) => {
+                const next = [...pin];
+                next[i] = e.target.value.replace(/\D/g, "").slice(0, 1);
+                setPin(next);
+                if (next[i] && i < 3) {
+                  const el = document.querySelectorAll<HTMLInputElement>("[data-pin]")[i + 1];
+                  el?.focus();
+                }
+              }}
+              data-pin
               className="size-12 text-center text-xl mono rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] outline-none focus:border-[var(--accent-primary)]"
             />
           ))}
         </div>
       </Card>
       <Card title="Verrouillage auto">
-        <Toggle label="Verrouiller après 10 min moteur coupé" checked />
+        <Toggle label="Verrouiller après 10 min moteur coupé" defaultChecked />
         <Toggle label="Mode furtif (LED off)" />
-        <Toggle label="Détection sabotage" checked />
+        <Toggle label="Détection sabotage" defaultChecked />
       </Card>
     </>
   );
 }
 
-function Placeholder({ title }: { title: string }) {
+function DeviceSection() {
+  const onReboot = async () => {
+    const ok = await confirm({
+      title: "Redémarrer le module ESP32-S3 ?",
+      description: "Le tracker sera hors-ligne pendant ~30 secondes.",
+      tone: "warning",
+      confirmLabel: "Redémarrer",
+    });
+    if (ok) await notify({ title: "Commande envoyée", description: "Reboot demandé via SIM7600G.", tone: "success" });
+  };
   return (
-    <Card title={title}>
-      <p className="text-xs text-[var(--text-secondary)]">
-        Configuration disponible dans la prochaine itération.
-      </p>
-    </Card>
+    <>
+      <Card title="Module GPS / GSM">
+        <div className="space-y-2 text-xs">
+          <Row k="Identifiant" v="MT-BF-001" />
+          <Row k="Firmware" v="v1.4.2 (2026-04-30)" />
+          <Row k="Modem" v="SIM7600G · LTE Cat-4" />
+          <Row k="GPS" v="u-blox MAX-M8Q · 9 satellites" />
+          <Row k="APN" v="internet.orange.bf" />
+          <Row k="Batterie" v="86%" />
+        </div>
+      </Card>
+      <Card
+        title="Maintenance"
+        action={
+          <button onClick={onReboot} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/15 text-[var(--accent-red)] font-semibold hover:bg-[var(--accent-red)]/25">
+            Redémarrer
+          </button>
+        }
+      >
+        <p className="text-xs text-[var(--text-secondary)]">
+          Forcer un redémarrage à distance ou installer la dernière version du firmware OTA.
+        </p>
+      </Card>
+    </>
   );
 }
 
-function Toggle({ label, checked = false }: { label: string; checked?: boolean }) {
+function AccountSection() {
+  const onLogout = async () => {
+    const ok = await confirm({
+      title: "Se déconnecter ?",
+      description: "Vous devrez vous reconnecter pour suivre votre moto.",
+      tone: "warning",
+      confirmLabel: "Déconnecter",
+    });
+    if (ok) await notify({ title: "Déconnecté", tone: "success" });
+  };
+  return (
+    <>
+      <Card title="Profil">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Nom" defaultValue="Ouédraogo Y." />
+            <Field label="Téléphone" defaultValue="+226 70 12 34 56" />
+          </div>
+          <Field label="Email" defaultValue="user@mototrack.bf" />
+        </div>
+      </Card>
+      <Card
+        title="Session"
+        action={
+          <button onClick={onLogout} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--accent-red)]/15 hover:text-[var(--accent-red)]">
+            Se déconnecter
+          </button>
+        }
+      >
+        <p className="text-xs text-[var(--text-secondary)]">Session active depuis Ouagadougou · Chrome desktop.</p>
+      </Card>
+    </>
+  );
+}
+
+function Field({ label, defaultValue }: { label: string; defaultValue: string }) {
+  return (
+    <div>
+      <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">{label}</label>
+      <input defaultValue={defaultValue} className="mt-1 w-full h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)]" />
+    </div>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between py-1.5 border-b border-[var(--border)] last:border-0">
+      <span className="text-[var(--text-secondary)]">{k}</span>
+      <span className="mono">{v}</span>
+    </div>
+  );
+}
+
+function Toggle({ label, defaultChecked = false }: { label: string; defaultChecked?: boolean }) {
+  const [checked, setChecked] = useState(defaultChecked);
   return (
     <label className="flex items-center justify-between cursor-pointer py-1.5">
       <span className="text-xs">{label}</span>
-      <span className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}>
+      <button
+        type="button"
+        onClick={() => setChecked((c) => !c)}
+        className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}
+      >
         <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
-      </span>
+      </button>
     </label>
   );
 }
