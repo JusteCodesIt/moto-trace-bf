@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Bell, Shield, CheckCheck, Trash2, MapPin } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { PageHeader, EmptyState } from "@/components/PageHeader";
+import { EmptyState } from "@/components/PageHeader";
+import { SectionHero } from "@/components/SectionHero";
 import { useApp } from "@/lib/store";
 import { relTime } from "@/lib/format";
 import { useState } from "react";
+import { confirm, notify } from "@/components/ConfirmDialog";
+import illusAlerts from "@/assets/illus-alerts.png";
 
 export const Route = createFileRoute("/alerts")({
   head: () => ({ meta: [{ title: "Alertes — MotoTrack BF" }] }),
@@ -21,26 +24,63 @@ const sevColor: Record<string, string> = {
 
 function AlertsPage() {
   const { alerts, markAllRead, markAlertRead, unreadAlerts } = useApp();
-  const unread = unreadAlerts();
+  const [deleted, setDeleted] = useState<Set<string>>(new Set());
+  const visible = alerts.filter((a) => !deleted.has(a.id));
+  const unread = visible.filter((a) => !a.read).length || unreadAlerts();
   const [filter, setFilter] = useState<string>("Tous");
 
-  const filtered = filter === "Tous" ? alerts : alerts.filter((a) => a.title.toLowerCase().includes(filter.toLowerCase()));
-  const riskScore = Math.min(100, alerts.filter((a) => !a.read).length * 12);
+  const filtered = filter === "Tous" ? visible : visible.filter((a) => a.title.toLowerCase().includes(filter.toLowerCase()));
+  const riskScore = Math.min(100, visible.filter((a) => !a.read).length * 12);
+
+  const onMarkAll = async () => {
+    const ok = await confirm({
+      title: "Marquer toutes les alertes comme lues ?",
+      description: `${unread} alerte${unread > 1 ? "s" : ""} seront marquées comme lues.`,
+      tone: "info",
+      confirmLabel: "Marquer lues",
+    });
+    if (ok) {
+      markAllRead();
+      await notify({ title: "Toutes les alertes ont été marquées lues", tone: "success" });
+    }
+  };
+
+  const onDelete = async (id: string, title: string) => {
+    const ok = await confirm({
+      title: "Supprimer cette alerte ?",
+      description: `« ${title} » sera définitivement retirée du journal.`,
+      tone: "danger",
+      confirmLabel: "Supprimer",
+    });
+    if (ok) setDeleted((d) => new Set(d).add(id));
+  };
+
+  const onLocate = async (lat: number, lng: number) => {
+    await notify({
+      title: "Position de l'alerte",
+      description: `${lat.toFixed(5)}, ${lng.toFixed(5)} — la position sera ouverte dans la carte.`,
+      tone: "info",
+    });
+  };
 
   return (
     <AppShell>
-      <PageHeader
-        title="Centre d'alertes"
-        subtitle={`${unread} non lues sur ${alerts.length} totales`}
-        icon={Bell}
-        action={
-          <button onClick={markAllRead} className="hidden md:inline-flex items-center gap-2 h-9 px-3 rounded-md bg-[var(--bg-elevated)] text-xs">
-            <CheckCheck className="size-4" /> Tout marquer lu
-          </button>
-        }
-      />
-
       <div className="p-4 md:p-8 pb-24 max-w-6xl mx-auto">
+        <SectionHero
+          eyebrow="Centre d'alertes"
+          icon={Bell}
+          title={`${unread} alerte${unread !== 1 ? "s" : ""} non lue${unread !== 1 ? "s" : ""} demandent votre attention`}
+          description="Surveillez les chocs, mouvements suspects, sorties de géozone et anomalies batterie en temps réel. Chaque action critique vous demande confirmation."
+          image={illusAlerts}
+          actions={
+            unread > 0 && (
+              <button onClick={onMarkAll} className="h-10 px-4 rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] text-xs font-semibold inline-flex items-center gap-2 hover:opacity-90">
+                <CheckCheck className="size-4" /> Tout marquer lu
+              </button>
+            )
+          }
+        />
+
         {/* Risk score + counts */}
         <div className="grid md:grid-cols-4 gap-3 mb-6">
           <div className="card-elev p-4 flex items-center gap-4">
@@ -72,7 +112,7 @@ function AlertsPage() {
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`h-8 px-3 rounded-md text-xs ${filter === f ? "bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]" : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+              className={`h-8 px-3 rounded-md text-xs transition-colors ${filter === f ? "bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]" : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
             >
               {f}
             </button>
@@ -103,11 +143,14 @@ function AlertsPage() {
                   </div>
                   <p className="text-xs text-[var(--text-secondary)]">{a.message}</p>
                   <div className="flex items-center gap-3 mt-2 text-[10px] mono text-[var(--text-secondary)]">
-                    <span>{new Date(a.timestamp).toLocaleString("fr-FR")}</span>
+                    <span suppressHydrationWarning>{new Date(a.timestamp).toLocaleString("fr-FR")}</span>
                     <span>·</span>
-                    <span>{relTime(a.timestamp)}</span>
-                    {a.lat && (
-                      <button className="flex items-center gap-1 text-[var(--accent-cyan)]">
+                    <span suppressHydrationWarning>{relTime(a.timestamp)}</span>
+                    {a.lat && a.lng && (
+                      <button
+                        onClick={() => onLocate(a.lat!, a.lng!)}
+                        className="flex items-center gap-1 text-[var(--accent-cyan)] hover:underline"
+                      >
                         <MapPin className="size-3" /> Voir
                       </button>
                     )}
@@ -117,12 +160,17 @@ function AlertsPage() {
                   {!a.read && (
                     <button
                       onClick={() => markAlertRead(a.id)}
+                      aria-label="Marquer comme lu"
                       className="size-8 grid place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--accent-green)] hover:bg-[var(--bg-elevated)]"
                     >
                       <CheckCheck className="size-4" />
                     </button>
                   )}
-                  <button className="size-8 grid place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-elevated)]">
+                  <button
+                    onClick={() => onDelete(a.id, a.title)}
+                    aria-label="Supprimer"
+                    className="size-8 grid place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-elevated)]"
+                  >
                     <Trash2 className="size-4" />
                   </button>
                 </div>
