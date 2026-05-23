@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Settings as SettingsIcon, Bell, Shield, Smartphone, User, Sliders, Sparkles } from "lucide-react";
+import { Settings as SettingsIcon, Bell, Shield, Smartphone, User, Sliders, Sparkles, Copy, RefreshCw, Wifi, Radio, Download, CheckCircle2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { SectionHero } from "@/components/SectionHero";
 import { useState } from "react";
