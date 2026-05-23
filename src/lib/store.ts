@@ -59,7 +59,7 @@ export const useApp = create<AppState>((set, get) => ({
     set((s) => ({ alerts: s.alerts.map((a) => ({ ...a, read: true })) })),
   pushAlert: (a) => set((s) => ({ alerts: [a, ...s.alerts] })),
 
-  leftPanelOpen: true,
+  leftPanelOpen: false,
   rightPanelTab: "live",
   setLeftPanelOpen: (leftPanelOpen) => set({ leftPanelOpen }),
   setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
