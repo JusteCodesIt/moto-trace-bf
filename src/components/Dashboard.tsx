@@ -75,14 +75,14 @@ export function Dashboard() {
           </span>
         </div>
 
-        <button className="glass relative h-11 w-11 grid place-items-center pointer-events-auto hover:bg-[var(--bg-elevated)] transition-colors">
+        <a href="/alerts" title="Voir les alertes" className="glass relative h-11 w-11 grid place-items-center pointer-events-auto hover:bg-[var(--bg-elevated)] transition-colors">
           <Bell className="size-[18px]" />
           {unread > 0 && (
             <span className="absolute -top-1 -right-1 text-[10px] mono px-1.5 py-0.5 rounded-full bg-[var(--accent-red)] text-white min-w-[18px] text-center">
               {unread}
             </span>
           )}
-        </button>
+        </a>
       </div>
 
       {/* ─── MAP TOOL CLUSTER ─── */}
