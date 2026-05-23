@@ -36,21 +36,24 @@ const SUBSCORES = [
 ];
 
 function StatsPage() {
+  const periods = ["7 jours", "Mois", "Trimestre", "Année"] as const;
+  const [period, setPeriod] = useState<(typeof periods)[number]>("7 jours");
   return (
     <AppShell>
       <PageHeader
         title="Analytics & score conducteur"
-        subtitle="Insights sur les 7 derniers jours"
+        subtitle={`Insights — ${period}`}
         icon={BarChart3}
       />
 
       <div className="p-4 md:p-8 pb-24 max-w-7xl mx-auto space-y-6">
         {/* Period */}
         <div className="flex bg-[var(--bg-surface)] rounded-md p-1 w-fit border border-[var(--border)]">
-          {["7 jours", "Mois", "Trimestre", "Année"].map((p, i) => (
+          {periods.map((p) => (
             <button
               key={p}
-              className={`h-8 px-4 text-xs rounded ${i === 0 ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-secondary)]"}`}
+              onClick={() => setPeriod(p)}
+              className={`h-8 px-4 text-xs rounded transition-colors ${period === p ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
             >
               {p}
             </button>
