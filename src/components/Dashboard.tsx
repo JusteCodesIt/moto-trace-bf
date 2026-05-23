@@ -88,15 +88,39 @@ export function Dashboard() {
       {/* ─── MAP TOOL CLUSTER ─── */}
       <div className="absolute top-20 md:top-20 left-3 z-20 glass p-1 flex flex-col gap-0.5">
         {[
-          { icon: Crosshair, label: "Centrer" },
-          { icon: Navigation, label: "Waypoint" },
-          { icon: Search, label: "Recherche" },
-          { icon: Ruler, label: "Mesurer" },
-          { icon: Maximize2, label: "Plein écran" },
-        ].map(({ icon: Icon, label }, i) => (
+          {
+            icon: Crosshair,
+            label: "Centrer sur la moto",
+            action: () => notify({ title: "Carte recentrée", description: `Position: ${telemetry.lat.toFixed(5)}, ${telemetry.lng.toFixed(5)}`, tone: "info" }),
+          },
+          {
+            icon: Navigation,
+            label: "Itinéraire (Google Maps)",
+            action: () => window.open(`https://www.google.com/maps/dir/?api=1&destination=${telemetry.lat},${telemetry.lng}`, "_blank"),
+          },
+          {
+            icon: Search,
+            label: "Rechercher",
+            action: () => notify({ title: "Recherche d'adresse", description: "Saisissez une adresse dans la barre supérieure (à venir).", tone: "info" }),
+          },
+          {
+            icon: Ruler,
+            label: "Mesurer",
+            action: () => notify({ title: "Outil mesure", description: "Cliquez deux points sur la carte pour mesurer (à venir).", tone: "info" }),
+          },
+          {
+            icon: Maximize2,
+            label: "Plein écran",
+            action: () => {
+              if (document.fullscreenElement) document.exitFullscreen();
+              else document.documentElement.requestFullscreen?.();
+            },
+          },
+        ].map(({ icon: Icon, label, action }) => (
           <button
-            key={i}
+            key={label}
             title={label}
+            onClick={action}
             className="size-9 grid place-items-center rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
           >
             <Icon className="size-[16px]" />
