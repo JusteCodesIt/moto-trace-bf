@@ -17,6 +17,7 @@ import {
   Search,
   Maximize2,
   Ruler,
+  X,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
@@ -42,12 +43,26 @@ export function Dashboard() {
     unreadAlerts,
   } = useApp();
 
+  const [recenterTick, setRecenterTick] = useState(0);
+  const [measuring, setMeasuring] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   // start the mock stream
   useEffect(() => {
     startTelemetryStream();
     const unsub = subscribeTelemetry(setTelemetry);
     return () => unsub();
   }, [setTelemetry]);
+
+  // fullscreen sync
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
 
   const unread = unreadAlerts();
 
