@@ -73,6 +73,20 @@ export function Dashboard() {
         heading={telemetry.heading}
         trail={trail}
         style={mapStyle}
+        recenterTick={recenterTick}
+        searchQuery={searchQuery}
+        onSearchResult={(ok, addr) => {
+          if (ok) notify({ title: "Adresse trouvée", description: addr, tone: "success" });
+          else notify({ title: "Adresse introuvable", description: "Aucun résultat pour cette recherche.", tone: "warning" });
+        }}
+        measuring={measuring}
+        onMeasure={(d) =>
+          notify({
+            title: "Distance mesurée",
+            description: d > 1000 ? `${(d / 1000).toFixed(2)} km` : `${Math.round(d)} m`,
+            tone: "info",
+          })
+        }
       />
 
       {/* ─── TOP BAR ─── */}
@@ -106,61 +120,109 @@ export function Dashboard() {
           {
             icon: Crosshair,
             label: "Centrer sur la moto",
-            action: () => notify({ title: "Carte recentrée", description: `Position: ${telemetry.lat.toFixed(5)}, ${telemetry.lng.toFixed(5)}`, tone: "info" }),
+            active: false,
+            action: () => {
+              setRecenterTick((n) => n + 1);
+            },
           },
           {
             icon: Navigation,
             label: "Itinéraire (Google Maps)",
-            action: () => window.open(`https://www.google.com/maps/dir/?api=1&destination=${telemetry.lat},${telemetry.lng}`, "_blank"),
+            active: false,
+            action: () =>
+              window.open(
+                `https://www.google.com/maps/dir/?api=1&destination=${telemetry.lat},${telemetry.lng}`,
+                "_blank",
+              ),
           },
           {
             icon: Search,
-            label: "Rechercher",
-            action: () => notify({ title: "Recherche d'adresse", description: "Saisissez une adresse dans la barre supérieure (à venir).", tone: "info" }),
+            label: "Rechercher une adresse",
+            active: searchOpen,
+            action: () => setSearchOpen((v) => !v),
           },
           {
             icon: Ruler,
-            label: "Mesurer",
-            action: () => notify({ title: "Outil mesure", description: "Cliquez deux points sur la carte pour mesurer (à venir).", tone: "info" }),
+            label: measuring ? "Arrêter la mesure" : "Mesurer une distance",
+            active: measuring,
+            action: async () => {
+              if (!measuring) {
+                await notify({
+                  title: "Outil mesure activé",
+                  description: "Cliquez deux points sur la carte pour mesurer la distance.",
+                  tone: "info",
+                });
+              }
+              setMeasuring((v) => !v);
+            },
           },
           {
             icon: Maximize2,
-            label: "Plein écran",
+            label: isFullscreen ? "Quitter le plein écran" : "Plein écran",
+            active: isFullscreen,
             action: () => {
               if (document.fullscreenElement) document.exitFullscreen();
               else document.documentElement.requestFullscreen?.();
             },
           },
-        ].map(({ icon: Icon, label, action }) => (
+        ].map(({ icon: Icon, label, action, active }) => (
           <button
             key={label}
             title={label}
             onClick={action}
-            className="size-9 grid place-items-center rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            className={cn(
+              "size-9 grid place-items-center rounded-md transition-colors",
+              active
+                ? "bg-[var(--accent-primary)] text-[var(--accent-milk)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]",
+            )}
           >
             <Icon className="size-[16px]" />
           </button>
         ))}
       </div>
 
-      {/* ─── BASE LAYER SWITCHER ─── */}
-      <div className="absolute top-20 right-3 z-20 glass p-1 flex">
-        {(["streets", "satellite"] as const).map((s) => (
+      {/* ─── SEARCH BAR (toggleable) ─── */}
+      {searchOpen && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!searchInput.trim()) return;
+            // bump even when same query
+            setSearchQuery(`${searchInput.trim()} #${Date.now()}`.replace(/ #\d+$/, "") + ` #${Date.now()}`);
+            setSearchQuery(searchInput.trim() + " ");
+            // also a clean version (geocoder ignores trailing space)
+            setTimeout(() => setSearchQuery(searchInput.trim()), 0);
+          }}
+          className="absolute top-20 left-16 z-20 glass-strong h-10 pl-3 pr-1 flex items-center gap-2 rounded-md w-[280px]"
+        >
+          <Search className="size-4 text-[var(--text-secondary)] shrink-0" />
+          <input
+            autoFocus
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Adresse, lieu…"
+            className="flex-1 bg-transparent text-xs outline-none placeholder:text-[var(--text-dim)]"
+          />
           <button
-            key={s}
-            onClick={() => setMapStyle(s)}
-            className={cn(
-              "h-8 px-3 text-xs rounded-md flex items-center gap-1.5 transition-colors capitalize",
-              mapStyle === s
-                ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-            )}
+            type="submit"
+            className="h-7 px-2.5 text-[10px] font-semibold uppercase rounded bg-[var(--accent-primary)] text-[var(--accent-milk)]"
           >
-            <Layers className="size-3.5" />
-            {s === "streets" ? "Rue" : "Satellite"}
+            OK
           </button>
-        ))}
-      </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen(false);
+              setSearchInput("");
+            }}
+            className="size-7 grid place-items-center rounded text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+            aria-label="Fermer"
+          >
+            <X className="size-3.5" />
+          </button>
+        </form>
+      )}
 
       {/* ─── LEFT VITALS PANEL ─── */}
       <button
