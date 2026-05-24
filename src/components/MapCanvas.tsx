@@ -3,6 +3,16 @@ import { useEffect, useRef, useState } from "react";
 
 interface LatLng { lat: number; lng: number }
 
+export interface GeoZone {
+  id: string;
+  shape: "circle" | "rect" | "poly";
+  lat: number;
+  lng: number;
+  radius: number; // meters
+  status?: "in" | "out";
+  name?: string;
+}
+
 interface Props {
   center: [number, number];
   heading?: number;
@@ -14,9 +24,25 @@ interface Props {
   style?: "streets" | "satellite";
   followVehicle?: boolean;
   className?: string;
+
+  /** Increment to imperatively recenter on the vehicle (pan + zoom). */
+  recenterTick?: number;
+  /** When changed (non-empty), geocode and pan to result. */
+  searchQuery?: string;
+  onSearchResult?: (ok: boolean, address?: string) => void;
+
+  /** Enable measure tool — click two points to get distance. */
+  measuring?: boolean;
+  onMeasure?: (distanceMeters: number) => void;
+
+  /** Geofence zones drawn permanently. */
+  zones?: GeoZone[];
+  /** Currently-edited zone, highlighted. */
+  editingZone?: GeoZone | null;
+  /** Click on the map to pick a coordinate. */
+  onMapClick?: (lat: number, lng: number) => void;
 }
 
-// Dark "command center" style for Google Maps
 const DARK_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#0c0f1a" }] },
   { elementType: "labels.text.stroke", stylers: [{ color: "#0c0f1a" }] },
@@ -36,7 +62,6 @@ const DARK_STYLE: google.maps.MapTypeStyle[] = [
   { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3a4a66" }] },
 ];
 
-// Singleton loader for Google Maps JS API
 let mapsLoader: Promise<typeof google> | null = null;
 function loadGoogleMaps(): Promise<typeof google> {
   if (typeof window === "undefined") return Promise.reject(new Error("SSR"));
@@ -49,7 +74,7 @@ function loadGoogleMaps(): Promise<typeof google> {
   mapsLoader = new Promise((resolve, reject) => {
     (window as any).__mtInitMap = () => resolve((window as any).google);
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&loading=async&callback=__mtInitMap&libraries=geometry${channel ? `&channel=${channel}` : ""}`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&loading=async&callback=__mtInitMap&libraries=geometry,places${channel ? `&channel=${channel}` : ""}`;
     s.async = true;
     s.defer = true;
     s.onerror = () => reject(new Error("Failed to load Google Maps"));
@@ -79,6 +104,14 @@ export function MapCanvas({
   style = "streets",
   followVehicle = true,
   className,
+  recenterTick,
+  searchQuery,
+  onSearchResult,
+  measuring = false,
+  onMeasure,
+  zones,
+  editingZone,
+  onMapClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -86,6 +119,14 @@ export function MapCanvas({
   const trailRef = useRef<google.maps.Polyline | null>(null);
   const fullPathRef = useRef<google.maps.Polyline | null>(null);
   const pinsRef = useRef<google.maps.Marker[]>([]);
+  const zoneShapesRef = useRef<Array<google.maps.Circle | google.maps.Rectangle>>([]);
+  const editingShapeRef = useRef<google.maps.Circle | google.maps.Rectangle | null>(null);
+  const measureRef = useRef<{
+    pts: google.maps.LatLng[];
+    line: google.maps.Polyline | null;
+    markers: google.maps.Marker[];
+  }>({ pts: [], line: null, markers: [] });
+  const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
   const fittedRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,30 +155,13 @@ export function MapCanvas({
         markerRef.current = new g.maps.Marker({
           position: { lat: center[0], lng: center[1] },
           map,
-          icon: {
-            url: VEHICLE_ICON,
-            scaledSize: new g.maps.Size(44, 44),
-            anchor: new g.maps.Point(22, 22),
-          },
+          icon: { url: VEHICLE_ICON, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) },
           optimized: false,
           zIndex: 999,
         });
 
-        fullPathRef.current = new g.maps.Polyline({
-          map,
-          path: [],
-          strokeColor: "#5a6378",
-          strokeOpacity: 0.5,
-          strokeWeight: 3,
-        });
-
-        trailRef.current = new g.maps.Polyline({
-          map,
-          path: [],
-          strokeColor: "#00D4FF",
-          strokeOpacity: 0.9,
-          strokeWeight: 4,
-        });
+        fullPathRef.current = new g.maps.Polyline({ map, path: [], strokeColor: "#5a6378", strokeOpacity: 0.5, strokeWeight: 3 });
+        trailRef.current = new g.maps.Polyline({ map, path: [], strokeColor: "#00D4FF", strokeOpacity: 0.9, strokeWeight: 4 });
 
         setReady(true);
       })
@@ -147,6 +171,15 @@ export function MapCanvas({
       cancelled = true;
       pinsRef.current.forEach((m) => m.setMap(null));
       pinsRef.current = [];
+      zoneShapesRef.current.forEach((s) => s.setMap(null));
+      zoneShapesRef.current = [];
+      editingShapeRef.current?.setMap(null);
+      editingShapeRef.current = null;
+      measureRef.current.line?.setMap(null);
+      measureRef.current.markers.forEach((m) => m.setMap(null));
+      measureRef.current = { pts: [], line: null, markers: [] };
+      clickListenerRef.current?.remove();
+      clickListenerRef.current = null;
       markerRef.current?.setMap(null);
       trailRef.current?.setMap(null);
       fullPathRef.current?.setMap(null);
@@ -166,6 +199,32 @@ export function MapCanvas({
     markerRef.current?.setPosition(pos);
     if (followVehicle && mapRef.current) mapRef.current.panTo(pos);
   }, [center, heading, followVehicle, ready]);
+
+  // imperative recenter
+  useEffect(() => {
+    if (!ready || recenterTick === undefined || !mapRef.current) return;
+    mapRef.current.panTo({ lat: center[0], lng: center[1] });
+    mapRef.current.setZoom(16);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recenterTick, ready]);
+
+  // search (geocode)
+  useEffect(() => {
+    if (!ready || !searchQuery || !mapRef.current) return;
+    const g = (window as any).google as typeof google;
+    const geo = new g.maps.Geocoder();
+    geo.geocode({ address: searchQuery }, (results, status) => {
+      if (status === "OK" && results && results[0]) {
+        const loc = results[0].geometry.location;
+        mapRef.current!.panTo(loc);
+        mapRef.current!.setZoom(15);
+        onSearchResult?.(true, results[0].formatted_address);
+      } else {
+        onSearchResult?.(false);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, ready]);
 
   // trail
   useEffect(() => {
@@ -206,6 +265,93 @@ export function MapCanvas({
       }));
     }
   }, [startPoint, endPoint, ready]);
+
+  // zones (persisted)
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    const g = (window as any).google as typeof google;
+    zoneShapesRef.current.forEach((s) => s.setMap(null));
+    zoneShapesRef.current = [];
+    (zones ?? []).forEach((z) => {
+      const color = z.status === "in" ? "#10F58F" : "#22d3ff";
+      if (z.shape === "rect") {
+        const d = z.radius / 111320; // approx deg per meter
+        zoneShapesRef.current.push(new g.maps.Rectangle({
+          map: mapRef.current!,
+          bounds: { north: z.lat + d, south: z.lat - d, east: z.lng + d, west: z.lng - d },
+          strokeColor: color, strokeOpacity: 0.9, strokeWeight: 2,
+          fillColor: color, fillOpacity: 0.08, clickable: false,
+        }));
+      } else {
+        zoneShapesRef.current.push(new g.maps.Circle({
+          map: mapRef.current!, center: { lat: z.lat, lng: z.lng }, radius: z.radius,
+          strokeColor: color, strokeOpacity: 0.9, strokeWeight: 2,
+          fillColor: color, fillOpacity: 0.08, clickable: false,
+        }));
+      }
+    });
+  }, [zones, ready]);
+
+  // editing zone (highlighted)
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    const g = (window as any).google as typeof google;
+    editingShapeRef.current?.setMap(null);
+    editingShapeRef.current = null;
+    if (!editingZone) return;
+    const color = "#FFE600";
+    if (editingZone.shape === "rect") {
+      const d = editingZone.radius / 111320;
+      editingShapeRef.current = new g.maps.Rectangle({
+        map: mapRef.current,
+        bounds: { north: editingZone.lat + d, south: editingZone.lat - d, east: editingZone.lng + d, west: editingZone.lng - d },
+        strokeColor: color, strokeOpacity: 1, strokeWeight: 2.5,
+        fillColor: color, fillOpacity: 0.12, clickable: false, zIndex: 50,
+      });
+    } else {
+      editingShapeRef.current = new g.maps.Circle({
+        map: mapRef.current, center: { lat: editingZone.lat, lng: editingZone.lng }, radius: editingZone.radius,
+        strokeColor: color, strokeOpacity: 1, strokeWeight: 2.5,
+        fillColor: color, fillOpacity: 0.12, clickable: false, zIndex: 50,
+      });
+    }
+  }, [editingZone, ready]);
+
+  // click handler (map click + measuring)
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    const g = (window as any).google as typeof google;
+    clickListenerRef.current?.remove();
+    clickListenerRef.current = mapRef.current.addListener("click", (e: google.maps.MapMouseEvent) => {
+      if (!e.latLng) return;
+      if (measuring) {
+        const m = measureRef.current;
+        m.pts.push(e.latLng);
+        m.markers.push(new g.maps.Marker({
+          position: e.latLng, map: mapRef.current!,
+          icon: { path: g.maps.SymbolPath.CIRCLE, scale: 5, fillColor: "#FFE600", fillOpacity: 1, strokeColor: "#06121F", strokeWeight: 2 },
+        }));
+        if (m.pts.length === 2) {
+          m.line?.setMap(null);
+          m.line = new g.maps.Polyline({
+            map: mapRef.current!, path: m.pts,
+            strokeColor: "#FFE600", strokeOpacity: 0.95, strokeWeight: 3, icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 }, offset: "0", repeat: "10px" }],
+          });
+          const dist = g.maps.geometry.spherical.computeDistanceBetween(m.pts[0], m.pts[1]);
+          onMeasure?.(dist);
+          // reset after a short delay so user can place a new measure
+          setTimeout(() => {
+            m.line?.setMap(null); m.line = null;
+            m.markers.forEach((mk) => mk.setMap(null)); m.markers = [];
+            m.pts = [];
+          }, 4000);
+        }
+        return;
+      }
+      onMapClick?.(e.latLng.lat(), e.latLng.lng());
+    });
+    return () => clickListenerRef.current?.remove();
+  }, [ready, measuring, onMapClick, onMeasure]);
 
   return (
     <div className={className ?? "absolute inset-0"}>
