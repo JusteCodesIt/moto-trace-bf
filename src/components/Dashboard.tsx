@@ -182,17 +182,34 @@ export function Dashboard() {
         ))}
       </div>
 
+      {/* ─── BASE LAYER SWITCHER ─── */}
+      <div className="absolute top-20 right-3 z-20 glass p-1 flex">
+        {(["streets", "satellite"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setMapStyle(s)}
+            className={cn(
+              "h-8 px-3 text-xs rounded-md flex items-center gap-1.5 transition-colors capitalize",
+              mapStyle === s
+                ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+            )}
+          >
+            <Layers className="size-3.5" />
+            {s === "streets" ? "Rue" : "Satellite"}
+          </button>
+        ))}
+      </div>
+
       {/* ─── SEARCH BAR (toggleable) ─── */}
       {searchOpen && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!searchInput.trim()) return;
-            // bump even when same query
-            setSearchQuery(`${searchInput.trim()} #${Date.now()}`.replace(/ #\d+$/, "") + ` #${Date.now()}`);
-            setSearchQuery(searchInput.trim() + " ");
-            // also a clean version (geocoder ignores trailing space)
-            setTimeout(() => setSearchQuery(searchInput.trim()), 0);
+            const q = searchInput.trim();
+            if (!q) return;
+            // Append a zero-width tick so consecutive identical searches still trigger the effect
+            setSearchQuery(q + "\u200b".repeat((searchQuery.match(/\u200b/g)?.length ?? 0) + 1));
           }}
           className="absolute top-20 left-16 z-20 glass-strong h-10 pl-3 pr-1 flex items-center gap-2 rounded-md w-[280px]"
         >
