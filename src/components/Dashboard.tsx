@@ -647,7 +647,11 @@ function TripsTab() {
         <KPI label="Durée" value="1h23" />
       </div>
       {trips.map((t) => (
-        <div key={t.id} className="card-elev p-3 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer">
+        <a
+          key={t.id}
+          href={`/trips/${t.id}`}
+          className="card-elev p-3 block hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+        >
           <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
             <span suppressHydrationWarning>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
             <span>{t.distanceKm} km</span>
@@ -655,9 +659,9 @@ function TripsTab() {
           <div className="text-xs truncate">{t.endAddress}</div>
           <div className="flex items-center justify-between mt-1">
             <span className="text-[10px] mono text-[var(--text-secondary)]">max {t.maxSpeed}km/h</span>
-            <button className="text-[10px] text-[var(--accent-primary)]">▶ Replay</button>
+            <span className="text-[10px] text-[var(--accent-primary)]">▶ Replay</span>
           </div>
-        </div>
+        </a>
       ))}
     </>
   );
