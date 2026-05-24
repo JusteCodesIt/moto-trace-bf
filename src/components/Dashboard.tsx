@@ -17,6 +17,7 @@ import {
   Search,
   Maximize2,
   Ruler,
+  X,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
@@ -42,12 +43,26 @@ export function Dashboard() {
     unreadAlerts,
   } = useApp();
 
+  const [recenterTick, setRecenterTick] = useState(0);
+  const [measuring, setMeasuring] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   // start the mock stream
   useEffect(() => {
     startTelemetryStream();
     const unsub = subscribeTelemetry(setTelemetry);
     return () => unsub();
   }, [setTelemetry]);
+
+  // fullscreen sync
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
 
   const unread = unreadAlerts();
 
@@ -58,6 +73,20 @@ export function Dashboard() {
         heading={telemetry.heading}
         trail={trail}
         style={mapStyle}
+        recenterTick={recenterTick}
+        searchQuery={searchQuery}
+        onSearchResult={(ok, addr) => {
+          if (ok) notify({ title: "Adresse trouvée", description: addr, tone: "success" });
+          else notify({ title: "Adresse introuvable", description: "Aucun résultat pour cette recherche.", tone: "warning" });
+        }}
+        measuring={measuring}
+        onMeasure={(d) =>
+          notify({
+            title: "Distance mesurée",
+            description: d > 1000 ? `${(d / 1000).toFixed(2)} km` : `${Math.round(d)} m`,
+            tone: "info",
+          })
+        }
       />
 
       {/* ─── TOP BAR ─── */}
@@ -91,37 +120,62 @@ export function Dashboard() {
           {
             icon: Crosshair,
             label: "Centrer sur la moto",
-            action: () => notify({ title: "Carte recentrée", description: `Position: ${telemetry.lat.toFixed(5)}, ${telemetry.lng.toFixed(5)}`, tone: "info" }),
+            active: false,
+            action: () => {
+              setRecenterTick((n) => n + 1);
+            },
           },
           {
             icon: Navigation,
             label: "Itinéraire (Google Maps)",
-            action: () => window.open(`https://www.google.com/maps/dir/?api=1&destination=${telemetry.lat},${telemetry.lng}`, "_blank"),
+            active: false,
+            action: () =>
+              window.open(
+                `https://www.google.com/maps/dir/?api=1&destination=${telemetry.lat},${telemetry.lng}`,
+                "_blank",
+              ),
           },
           {
             icon: Search,
-            label: "Rechercher",
-            action: () => notify({ title: "Recherche d'adresse", description: "Saisissez une adresse dans la barre supérieure (à venir).", tone: "info" }),
+            label: "Rechercher une adresse",
+            active: searchOpen,
+            action: () => setSearchOpen((v) => !v),
           },
           {
             icon: Ruler,
-            label: "Mesurer",
-            action: () => notify({ title: "Outil mesure", description: "Cliquez deux points sur la carte pour mesurer (à venir).", tone: "info" }),
+            label: measuring ? "Arrêter la mesure" : "Mesurer une distance",
+            active: measuring,
+            action: async () => {
+              if (!measuring) {
+                await notify({
+                  title: "Outil mesure activé",
+                  description: "Cliquez deux points sur la carte pour mesurer la distance.",
+                  tone: "info",
+                });
+              }
+              setMeasuring((v) => !v);
+            },
           },
           {
             icon: Maximize2,
-            label: "Plein écran",
+            label: isFullscreen ? "Quitter le plein écran" : "Plein écran",
+            active: isFullscreen,
             action: () => {
               if (document.fullscreenElement) document.exitFullscreen();
               else document.documentElement.requestFullscreen?.();
             },
           },
-        ].map(({ icon: Icon, label, action }) => (
+        ].map(({ icon: Icon, label, action, active }) => (
           <button
             key={label}
             title={label}
             onClick={action}
-            className="size-9 grid place-items-center rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            className={cn(
+              "size-9 grid place-items-center rounded-md transition-colors",
+              active
+                ? "bg-[var(--accent-primary)] text-[var(--accent-milk)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]",
+            )}
           >
             <Icon className="size-[16px]" />
           </button>
@@ -146,6 +200,46 @@ export function Dashboard() {
           </button>
         ))}
       </div>
+
+      {/* ─── SEARCH BAR (toggleable) ─── */}
+      {searchOpen && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const q = searchInput.trim();
+            if (!q) return;
+            // Append a zero-width tick so consecutive identical searches still trigger the effect
+            setSearchQuery(q + "\u200b".repeat((searchQuery.match(/\u200b/g)?.length ?? 0) + 1));
+          }}
+          className="absolute top-20 left-16 z-20 glass-strong h-10 pl-3 pr-1 flex items-center gap-2 rounded-md w-[280px]"
+        >
+          <Search className="size-4 text-[var(--text-secondary)] shrink-0" />
+          <input
+            autoFocus
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Adresse, lieu…"
+            className="flex-1 bg-transparent text-xs outline-none placeholder:text-[var(--text-dim)]"
+          />
+          <button
+            type="submit"
+            className="h-7 px-2.5 text-[10px] font-semibold uppercase rounded bg-[var(--accent-primary)] text-[var(--accent-milk)]"
+          >
+            OK
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen(false);
+              setSearchInput("");
+            }}
+            className="size-7 grid place-items-center rounded text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+            aria-label="Fermer"
+          >
+            <X className="size-3.5" />
+          </button>
+        </form>
+      )}
 
       {/* ─── LEFT VITALS PANEL ─── */}
       <button
@@ -471,15 +565,7 @@ function LiveTab() {
             rel="noreferrer"
             className="flex-1 h-7 text-[10px] text-center grid place-items-center rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] transition-colors"
           >
-            Google Maps
-          </a>
-          <a
-            href={`https://waze.com/ul?ll=${t.lat},${t.lng}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex-1 h-7 text-[10px] text-center grid place-items-center rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] transition-colors"
-          >
-            Waze
+            Voir sur Google Maps
           </a>
         </div>
       </div>
@@ -561,7 +647,11 @@ function TripsTab() {
         <KPI label="Durée" value="1h23" />
       </div>
       {trips.map((t) => (
-        <div key={t.id} className="card-elev p-3 hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer">
+        <a
+          key={t.id}
+          href={`/trips/${t.id}`}
+          className="card-elev p-3 block hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+        >
           <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
             <span suppressHydrationWarning>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
             <span>{t.distanceKm} km</span>
@@ -569,9 +659,9 @@ function TripsTab() {
           <div className="text-xs truncate">{t.endAddress}</div>
           <div className="flex items-center justify-between mt-1">
             <span className="text-[10px] mono text-[var(--text-secondary)]">max {t.maxSpeed}km/h</span>
-            <button className="text-[10px] text-[var(--accent-primary)]">▶ Replay</button>
+            <span className="text-[10px] text-[var(--accent-primary)]">▶ Replay</span>
           </div>
-        </div>
+        </a>
       ))}
     </>
   );

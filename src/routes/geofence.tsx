@@ -84,7 +84,14 @@ function GeofencePage() {
   return (
     <AppShell fullBleed>
       <div className="absolute inset-0">
-        <MapCanvas center={[telemetry.lat, telemetry.lng]} heading={telemetry.heading} followVehicle={false} />
+        <MapCanvas
+          center={[telemetry.lat, telemetry.lng]}
+          heading={telemetry.heading}
+          followVehicle={false}
+          zones={zones}
+          editingZone={editing}
+          onMapClick={(lat, lng) => setEditing((e) => ({ ...e, lat, lng }))}
+        />
       </div>
 
       <div className="absolute top-3 right-3 z-20 glass-strong px-4 py-3 flex items-center gap-3">
@@ -100,6 +107,11 @@ function GeofencePage() {
           <MapPin className="size-5 text-[var(--accent-primary)]" />
           <h2 className="text-base font-semibold">Géozones</h2>
         </div>
+
+        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed -mt-2">
+          Cliquez sur la carte pour déplacer le centre de la zone en cours d'édition.
+        </p>
+
 
         <div className="space-y-2">
           <Label>Nom de la zone</Label>
