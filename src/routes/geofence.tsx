@@ -108,6 +108,11 @@ function GeofencePage() {
           <h2 className="text-base font-semibold">Géozones</h2>
         </div>
 
+        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed -mt-2">
+          Cliquez sur la carte pour déplacer le centre de la zone en cours d'édition.
+        </p>
+
+
         <div className="space-y-2">
           <Label>Nom de la zone</Label>
           <input
