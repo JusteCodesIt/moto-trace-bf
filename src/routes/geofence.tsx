@@ -84,7 +84,14 @@ function GeofencePage() {
   return (
     <AppShell fullBleed>
       <div className="absolute inset-0">
-        <MapCanvas center={[telemetry.lat, telemetry.lng]} heading={telemetry.heading} followVehicle={false} />
+        <MapCanvas
+          center={[telemetry.lat, telemetry.lng]}
+          heading={telemetry.heading}
+          followVehicle={false}
+          zones={zones}
+          editingZone={editing}
+          onMapClick={(lat, lng) => setEditing((e) => ({ ...e, lat, lng }))}
+        />
       </div>
 
       <div className="absolute top-3 right-3 z-20 glass-strong px-4 py-3 flex items-center gap-3">
