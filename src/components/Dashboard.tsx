@@ -565,15 +565,7 @@ function LiveTab() {
             rel="noreferrer"
             className="flex-1 h-7 text-[10px] text-center grid place-items-center rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] transition-colors"
           >
-            Google Maps
-          </a>
-          <a
-            href={`https://waze.com/ul?ll=${t.lat},${t.lng}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex-1 h-7 text-[10px] text-center grid place-items-center rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] transition-colors"
-          >
-            Waze
+            Voir sur Google Maps
           </a>
         </div>
       </div>
