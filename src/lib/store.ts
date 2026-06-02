@@ -81,6 +81,7 @@ export const useApp = create<State>((set, get) => ({
   socketStatus: "reconnecting",
   zones: [],
   alerts: [],
+  trips: [],
   leftPanelOpen: false,
   rightPanelTab: "live",
   mapStyle: "streets",
