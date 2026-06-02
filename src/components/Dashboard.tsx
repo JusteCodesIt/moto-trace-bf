@@ -20,7 +20,6 @@ import {
   X,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
-import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
 import { MapCanvas } from "./MapCanvas";
 import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -30,8 +29,8 @@ export function Dashboard() {
   const {
     vehicleName,
     telemetry,
+    hasTelemetry,
     trail,
-    setTelemetry,
     socketStatus,
     leftPanelOpen,
     setLeftPanelOpen,
@@ -41,6 +40,7 @@ export function Dashboard() {
     setMapStyle,
     alerts,
     unreadAlerts,
+    zones,
   } = useApp();
 
   const [recenterTick, setRecenterTick] = useState(0);
@@ -49,13 +49,6 @@ export function Dashboard() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // start the mock stream
-  useEffect(() => {
-    startTelemetryStream();
-    const unsub = subscribeTelemetry(setTelemetry);
-    return () => unsub();
-  }, [setTelemetry]);
 
   // fullscreen sync
   useEffect(() => {
