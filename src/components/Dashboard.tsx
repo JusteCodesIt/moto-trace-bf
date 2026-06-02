@@ -311,6 +311,21 @@ export function Dashboard() {
           {Math.round(telemetry.heading)}° {bearingToCompass(telemetry.heading)}
         </div>
       </div>
+
+      {/* ─── EMPTY STATE: no telemetry yet ─── */}
+      {!hasTelemetry && (
+        <div className="absolute inset-x-3 top-[88px] z-20 md:left-1/2 md:-translate-x-1/2 md:inset-x-auto md:max-w-md">
+          <div className="glass-strong p-4 rounded-lg border border-[var(--accent-amber)]/40">
+            <div className="text-xs uppercase tracking-wider text-[var(--accent-amber)] font-semibold mb-1">
+              En attente du tracker
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              Aucune trame reçue du tracker ESP32-S3 pour le moment. La carte affichera la position dès que le dispositif enverra sa première trame HTTPS signée.
+              Configurez le code de jumelage et la clé HMAC depuis <a className="text-[var(--accent-cyan)] hover:underline" href="/settings">Paramètres</a>.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
