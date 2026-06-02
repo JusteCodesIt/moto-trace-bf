@@ -65,6 +65,10 @@ export function Dashboard() {
         center={[telemetry.lat, telemetry.lng]}
         heading={telemetry.heading}
         trail={trail}
+        zones={zones.filter((z) => z.active).map((z) => ({
+          id: z.id, shape: z.shape, lat: z.lat, lng: z.lng, radius: z.radius, name: z.name,
+          status: distM(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
+        }))}
         style={mapStyle}
         recenterTick={recenterTick}
         searchQuery={searchQuery}
