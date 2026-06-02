@@ -20,6 +20,12 @@ export interface Zone {
   lat: number; lng: number; radius: number;
   alertExit: boolean; alertEnter: boolean; active: boolean;
 }
+export interface Trip {
+  id: string; date: number; durationMin: number; distanceKm: number;
+  maxSpeed: number; avgSpeed: number;
+  startAddress: string; endAddress: string;
+  status: "completed" | "active" | "interrupted";
+}
 export interface DeviceInfo {
   id: string; name: string; isOnline: boolean; lastSeenAt: string | null;
 }
