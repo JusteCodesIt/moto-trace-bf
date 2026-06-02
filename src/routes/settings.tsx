@@ -533,6 +533,25 @@ function Row({ k, v }: { k: string; v: string }) {
   );
 }
 
+function CodeRow({ label, value, onCopy, mask }: { label: string; value: string; onCopy: (l: string, v: string) => void; mask?: boolean }) {
+  const [show, setShow] = useState(!mask);
+  const display = !value ? "—" : mask && !show ? "•".repeat(Math.min(40, value.length)) : value;
+  return (
+    <div className="card-elev p-2.5 flex items-center gap-2">
+      <span className="text-[10px] uppercase mono text-[var(--text-secondary)] w-24 shrink-0">{label}</span>
+      <span className="flex-1 truncate text-[11px] mono">{display}</span>
+      {mask && (
+        <button onClick={() => setShow((v) => !v)} className="text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent-cyan)] px-1">
+          {show ? "Cacher" : "Voir"}
+        </button>
+      )}
+      <button onClick={() => onCopy(label, value)} className="size-7 grid place-items-center rounded hover:bg-[var(--bg-elevated)]">
+        <Copy className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function Toggle({ label, defaultChecked = false }: { label: string; defaultChecked?: boolean }) {
   const [checked, setChecked] = useState(defaultChecked);
   return (
