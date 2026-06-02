@@ -168,7 +168,7 @@ function AlertsPage() {
                 <div className="flex items-center gap-1 shrink-0">
                   {!a.read && (
                     <button
-                      onClick={() => markAlertRead(a.id)}
+                      onClick={() => onMark(a.id)}
                       aria-label="Marquer comme lu"
                       className="size-8 grid place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--accent-green)] hover:bg-[var(--bg-elevated)]"
                     >
