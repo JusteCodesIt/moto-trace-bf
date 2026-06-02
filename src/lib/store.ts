@@ -1,68 +1,106 @@
 import { create } from "zustand";
-import type { Alert, TelemetryPoint, Trip } from "./mock";
-import { getCurrentTelemetry, seedAlerts, seedTrips } from "./mock";
 
-interface AppState {
-  // vehicle
+export interface TelemetryPoint {
+  lat: number; lng: number;
+  speed: number; heading: number; altitude: number;
+  satellites: number; hdop: number;
+  batteryMain: number; batteryBackup: number;
+  gsmBars: number; gsmCarrier: string;
+  engineOn: boolean;
+  accel: { x: number; y: number; z: number };
+  timestamp: number;
+}
+export interface Alert {
+  id: string; type: string; severity: "critical" | "warning" | "info";
+  title: string; message: string; timestamp: number;
+  lat?: number; lng?: number; read: boolean;
+}
+export interface Zone {
+  id: string; name: string; shape: "circle" | "rect";
+  lat: number; lng: number; radius: number;
+  alertExit: boolean; alertEnter: boolean; active: boolean;
+}
+export interface DeviceInfo {
+  id: string; name: string; isOnline: boolean; lastSeenAt: string | null;
+}
+
+const OUAGA: TelemetryPoint = {
+  lat: 12.364, lng: -1.5328, speed: 0, heading: 0, altitude: 0,
+  satellites: 0, hdop: 0, batteryMain: 0, batteryBackup: 0,
+  gsmBars: 0, gsmCarrier: "—", engineOn: false,
+  accel: { x: 0, y: 0, z: 0 }, timestamp: 0,
+};
+
+interface State {
+  device: DeviceInfo | null;
   vehicleName: string;
   telemetry: TelemetryPoint;
+  hasTelemetry: boolean;
   trail: Array<{ lat: number; lng: number }>;
-  setTelemetry: (p: TelemetryPoint) => void;
-
-  // connection
   socketStatus: "connected" | "reconnecting" | "offline";
-  setSocketStatus: (s: AppState["socketStatus"]) => void;
-
-  // trips
-  trips: Trip[];
-  selectedTripId: string | null;
-  selectTrip: (id: string | null) => void;
-
-  // alerts
+  zones: Zone[];
   alerts: Alert[];
-  unreadAlerts: () => number;
-  markAlertRead: (id: string) => void;
-  markAllRead: () => void;
-  pushAlert: (a: Alert) => void;
-
   // ui
   leftPanelOpen: boolean;
   rightPanelTab: "live" | "trips" | "alerts";
-  setLeftPanelOpen: (v: boolean) => void;
-  setRightPanelTab: (t: AppState["rightPanelTab"]) => void;
   mapStyle: "streets" | "satellite";
-  setMapStyle: (s: AppState["mapStyle"]) => void;
+
+  setDevice: (d: DeviceInfo) => void;
+  setTelemetry: (p: TelemetryPoint) => void;
+  pushTelemetry: (p: TelemetryPoint) => void;
+  setTrail: (t: Array<{ lat: number; lng: number }>) => void;
+  setSocketStatus: (s: State["socketStatus"]) => void;
+  setZones: (z: Zone[]) => void;
+  upsertZone: (z: Zone) => void;
+  removeZone: (id: string) => void;
+  setAlerts: (a: Alert[]) => void;
+  pushAlert: (a: Alert) => void;
+  updateAlert: (a: Alert) => void;
+  removeAlert: (id: string) => void;
+  markAlertRead: (id: string) => void;
+  markAllRead: () => void;
+  unreadAlerts: () => number;
+  setLeftPanelOpen: (v: boolean) => void;
+  setRightPanelTab: (t: State["rightPanelTab"]) => void;
+  setMapStyle: (s: State["mapStyle"]) => void;
 }
 
-export const useApp = create<AppState>((set, get) => ({
-  vehicleName: "MotoTrack #BF-001",
-  telemetry: getCurrentTelemetry(),
+export const useApp = create<State>((set, get) => ({
+  device: null,
+  vehicleName: "MotoTrack",
+  telemetry: OUAGA,
+  hasTelemetry: false,
   trail: [],
-  setTelemetry: (p) =>
-    set((s) => ({
-      telemetry: p,
-      trail: [...s.trail.slice(-99), { lat: p.lat, lng: p.lng }],
-    })),
-
-  socketStatus: "connected",
-  setSocketStatus: (socketStatus) => set({ socketStatus }),
-
-  trips: seedTrips(),
-  selectedTripId: null,
-  selectTrip: (selectedTripId) => set({ selectedTripId }),
-
-  alerts: seedAlerts(),
-  unreadAlerts: () => get().alerts.filter((a) => !a.read).length,
-  markAlertRead: (id) =>
-    set((s) => ({ alerts: s.alerts.map((a) => (a.id === id ? { ...a, read: true } : a)) })),
-  markAllRead: () =>
-    set((s) => ({ alerts: s.alerts.map((a) => ({ ...a, read: true })) })),
-  pushAlert: (a) => set((s) => ({ alerts: [a, ...s.alerts] })),
-
+  socketStatus: "reconnecting",
+  zones: [],
+  alerts: [],
   leftPanelOpen: false,
   rightPanelTab: "live",
+  mapStyle: "streets",
+
+  setDevice: (device) => set({ device, vehicleName: device.name }),
+  setTelemetry: (telemetry) => set({ telemetry, hasTelemetry: true }),
+  pushTelemetry: (p) => set((s) => ({
+    telemetry: p, hasTelemetry: true,
+    trail: [...s.trail.slice(-99), { lat: p.lat, lng: p.lng }],
+  })),
+  setTrail: (trail) => set({ trail }),
+  setSocketStatus: (socketStatus) => set({ socketStatus }),
+  setZones: (zones) => set({ zones }),
+  upsertZone: (z) => set((s) => {
+    const i = s.zones.findIndex((x) => x.id === z.id);
+    if (i === -1) return { zones: [...s.zones, z] };
+    const copy = [...s.zones]; copy[i] = z; return { zones: copy };
+  }),
+  removeZone: (id) => set((s) => ({ zones: s.zones.filter((z) => z.id !== id) })),
+  setAlerts: (alerts) => set({ alerts }),
+  pushAlert: (a) => set((s) => ({ alerts: [a, ...s.alerts] })),
+  updateAlert: (a) => set((s) => ({ alerts: s.alerts.map((x) => x.id === a.id ? a : x) })),
+  removeAlert: (id) => set((s) => ({ alerts: s.alerts.filter((a) => a.id !== id) })),
+  markAlertRead: (id) => set((s) => ({ alerts: s.alerts.map((a) => a.id === id ? { ...a, read: true } : a) })),
+  markAllRead: () => set((s) => ({ alerts: s.alerts.map((a) => ({ ...a, read: true })) })),
+  unreadAlerts: () => get().alerts.filter((a) => !a.read).length,
   setLeftPanelOpen: (leftPanelOpen) => set({ leftPanelOpen }),
   setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
-  mapStyle: "streets",
   setMapStyle: (mapStyle) => set({ mapStyle }),
 }));
