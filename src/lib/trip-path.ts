@@ -3,7 +3,7 @@
  * Each trip ID always produces the same realistic GPS trace around Ouagadougou.
  */
 
-import type { Trip } from "./mock";
+import type { Trip } from "./store";
 
 export interface TripPoint {
   lat: number;
