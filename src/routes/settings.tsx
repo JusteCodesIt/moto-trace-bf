@@ -334,11 +334,13 @@ function DeviceSection() {
   };
 
   const onPing = async () => {
-    await notify({
-      title: "Ping du tracker",
-      description: "RTT 412 ms · GSM signal 4/5 · GPS lock 9 sat — module en ligne.",
-      tone: "success",
-    });
+    if (!device) return;
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from("commands").insert({ device_id: device.id, kind: "ping", issued_by: user.id });
+    if (error) await notify({ title: "Erreur", description: error.message, tone: "danger" });
+    else await notify({ title: "Ping mis en file", description: "Le tracker répondra à sa prochaine connexion 4G.", tone: "success" });
   };
 
   return (
