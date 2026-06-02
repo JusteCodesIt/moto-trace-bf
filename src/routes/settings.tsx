@@ -229,13 +229,25 @@ function AntiTheftSection() {
 }
 
 function DeviceSection() {
-  const [pairing, setPairing] = useState<"idle" | "scanning" | "paired">("paired");
+  const [device, setDevice] = useState<{ id: string; name: string; pairing_code: string | null } | null>(null);
+  const [hmacSecret, setHmacSecret] = useState<string>("");
+  const [keyRotatedAt, setKeyRotatedAt] = useState<string | null>(null);
+  const [ingestUrl, setIngestUrl] = useState("/api/public/ingest");
   const [apiUrl, setApiUrl] = useState("https://api.mototrack.bf/ingest");
   const [apn, setApn] = useState("internet.orange.bf");
   const [wifiSsid, setWifiSsid] = useState("MotoTrack-Home");
   const [wifiPwd, setWifiPwd] = useState("");
-  const [hmacSecret, setHmacSecret] = useState("a7f3-c8d1-92be-44a0-7e5f-1b2c-9d8e-3f4a");
-  const [pairCode] = useState("BF-001-X7Q2");
+
+  useState(() => {
+    (async () => {
+      const { ensureMyDevice } = await import("@/lib/devices.functions");
+      const res = await ensureMyDevice();
+      setDevice(res.device);
+      setHmacSecret(res.hmacSecret ?? "");
+      setKeyRotatedAt(res.keyRotatedAt);
+      setIngestUrl(`${window.location.origin}${res.ingestUrl}`);
+    })();
+  });
 
   const copy = async (label: string, value: string) => {
     try {
@@ -247,44 +259,43 @@ function DeviceSection() {
   };
 
   const onReboot = async () => {
+    if (!device) return;
     const ok = await confirm({
       title: "Redémarrer le module ESP32-S3 ?",
-      description: "Le tracker sera hors-ligne pendant ~30 secondes.",
+      description: "Le tracker exécutera la commande à sa prochaine connexion 4G.",
       tone: "warning",
       confirmLabel: "Redémarrer",
     });
-    if (ok) await notify({ title: "Reboot envoyé via SIM7600G", tone: "success" });
+    if (!ok) return;
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("commands").insert({ device_id: device.id, kind: "reboot", issued_by: user.id });
+    await notify({ title: "Reboot programmé", tone: "success" });
   };
 
   const onPair = async () => {
-    setPairing("scanning");
-    const ok = await confirm({
-      title: "Coupler un nouveau module ?",
-      description: `Saisissez le code « ${pairCode} » sur le portail captif WiFi de l'ESP32-S3 (SSID MotoTrack-Setup).`,
+    if (!device?.pairing_code) return;
+    await notify({
+      title: "Code de jumelage",
+      description: `Saisissez « ${device.pairing_code} » dans le firmware ESP32-S3 puis flashez avec le device-id et la clé HMAC.`,
       tone: "info",
-      confirmLabel: "J'ai saisi le code",
     });
-    if (ok) {
-      setPairing("paired");
-      await notify({ title: "Module couplé", description: "Connexion HMAC vérifiée.", tone: "success" });
-    } else {
-      setPairing("idle");
-    }
   };
 
   const onRotateHmac = async () => {
+    if (!device) return;
     const ok = await confirm({
       title: "Générer une nouvelle clé HMAC ?",
-      description: "L'ancienne clé sera invalidée. Vous devrez la flasher sur l'ESP32-S3.",
+      description: "L'ancienne clé sera invalidée immédiatement. Vous devrez re-flasher le firmware avec la nouvelle clé.",
       tone: "danger",
       confirmLabel: "Régénérer",
     });
     if (!ok) return;
-    const hex = "0123456789abcdef";
-    const chunks = Array.from({ length: 8 }, () =>
-      Array.from({ length: 4 }, () => hex[Math.floor(Math.random() * 16)]).join(""),
-    );
-    setHmacSecret(chunks.join("-"));
+    const { rotateDeviceKey } = await import("@/lib/devices.functions");
+    const res = await rotateDeviceKey({ data: { deviceId: device.id } });
+    setHmacSecret(res.hmacSecret);
+    setKeyRotatedAt(new Date().toISOString());
     await notify({ title: "Clé HMAC régénérée", tone: "success" });
   };
 
@@ -323,11 +334,13 @@ function DeviceSection() {
   };
 
   const onPing = async () => {
-    await notify({
-      title: "Ping du tracker",
-      description: "RTT 412 ms · GSM signal 4/5 · GPS lock 9 sat — module en ligne.",
-      tone: "success",
-    });
+    if (!device) return;
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from("commands").insert({ device_id: device.id, kind: "ping", issued_by: user.id });
+    if (error) await notify({ title: "Erreur", description: error.message, tone: "danger" });
+    else await notify({ title: "Ping mis en file", description: "Le tracker répondra à sa prochaine connexion 4G.", tone: "success" });
   };
 
   return (
@@ -335,38 +348,42 @@ function DeviceSection() {
       <Card
         title="État du module"
         action={
-          <span className={`text-[10px] mono px-2 py-0.5 rounded ${pairing === "paired" ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]" : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"}`}>
-            {pairing === "paired" ? "COUPLÉ" : pairing === "scanning" ? "EN COURS…" : "NON COUPLÉ"}
+          <span className={`text-[10px] mono px-2 py-0.5 rounded ${device ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]" : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"}`}>
+            {device ? "COUPLÉ" : "EN ATTENTE"}
           </span>
         }
       >
         <div className="space-y-2 text-xs">
-          <Row k="Identifiant" v="MT-BF-001" />
-          <Row k="Firmware" v="v1.4.2 (2026-04-30)" />
-          <Row k="Modem" v="SIM7600G · LTE Cat-4" />
-          <Row k="GPS" v="u-blox MAX-M8Q · 9 satellites" />
-          <Row k="Dernier ping" v="il y a 4 s" />
+          <Row k="Device ID" v={device?.id ?? "—"} />
+          <Row k="Nom" v={device?.name ?? "—"} />
+          <Row k="Endpoint d'ingestion" v={ingestUrl} />
+          <Row k="Clé rotée" v={keyRotatedAt ? new Date(keyRotatedAt).toLocaleString("fr-FR") : "—"} />
         </div>
         <div className="flex gap-2 mt-4">
           <button onClick={onPing} className="flex-1 h-9 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] flex items-center justify-center gap-1.5">
-            <Radio className="size-3.5" /> Tester la connexion
+            <Radio className="size-3.5" /> Tester (envoie ping)
           </button>
           <button onClick={onPair} className="flex-1 h-9 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 flex items-center justify-center gap-1.5">
-            <CheckCircle2 className="size-3.5" /> Coupler un module
+            <CheckCircle2 className="size-3.5" /> Voir code d'appairage
           </button>
         </div>
       </Card>
 
-      <Card title="Code d'appairage">
-        <p className="text-xs text-[var(--text-secondary)] mb-3">
-          Connectez-vous au point d'accès <span className="mono text-[var(--accent-cyan)]">MotoTrack-Setup</span> du tracker, puis saisissez ce code pour l'associer à votre compte.
+      <Card title="Identifiants à flasher dans le firmware ESP32-S3">
+        <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
+          Ces trois valeurs doivent être compilées dans le firmware. Le tracker les utilise pour
+          signer chaque trame POST sur <code className="mono text-[var(--accent-cyan)]">/api/public/ingest</code> via HMAC-SHA256.
         </p>
-        <div className="flex items-center gap-2 p-3 rounded-md bg-[var(--bg-elevated)]">
-          <span className="flex-1 text-lg font-bold mono tracking-widest text-[var(--accent-primary)]">{pairCode}</span>
-          <button onClick={() => copy("Code", pairCode)} className="size-8 grid place-items-center rounded-md hover:bg-[var(--bg-surface)]">
-            <Copy className="size-3.5" />
-          </button>
+        <div className="space-y-2">
+          <CodeRow label="DEVICE_ID" value={device?.id ?? ""} onCopy={copy} />
+          <CodeRow label="HMAC_SECRET" value={hmacSecret} onCopy={copy} mask />
+          <CodeRow label="INGEST_URL" value={ingestUrl} onCopy={copy} />
         </div>
+        {device?.pairing_code && (
+          <div className="mt-3 text-[11px] text-[var(--text-secondary)]">
+            Code de jumelage (1ère mise en service) : <span className="mono text-[var(--accent-primary)] font-bold">{device.pairing_code}</span>
+          </div>
+        )}
       </Card>
 
       <Card
@@ -514,6 +531,25 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex justify-between py-1.5 border-b border-[var(--border)] last:border-0">
       <span className="text-[var(--text-secondary)]">{k}</span>
       <span className="mono">{v}</span>
+    </div>
+  );
+}
+
+function CodeRow({ label, value, onCopy, mask }: { label: string; value: string; onCopy: (l: string, v: string) => void; mask?: boolean }) {
+  const [show, setShow] = useState(!mask);
+  const display = !value ? "—" : mask && !show ? "•".repeat(Math.min(40, value.length)) : value;
+  return (
+    <div className="card-elev p-2.5 flex items-center gap-2">
+      <span className="text-[10px] uppercase mono text-[var(--text-secondary)] w-24 shrink-0">{label}</span>
+      <span className="flex-1 truncate text-[11px] mono">{display}</span>
+      {mask && (
+        <button onClick={() => setShow((v) => !v)} className="text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent-cyan)] px-1">
+          {show ? "Cacher" : "Voir"}
+        </button>
+      )}
+      <button onClick={() => onCopy(label, value)} className="size-7 grid place-items-center rounded hover:bg-[var(--bg-elevated)]">
+        <Copy className="size-3.5" />
+      </button>
     </div>
   );
 }

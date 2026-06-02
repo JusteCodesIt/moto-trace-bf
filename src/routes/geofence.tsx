@@ -1,85 +1,99 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MapPin, Plus, Trash2, Home } from "lucide-react";
+import { MapPin, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { MapCanvas } from "@/components/MapCanvas";
-import { useApp } from "@/lib/store";
+import { useApp, type Zone } from "@/lib/store";
 import { confirm, notify } from "@/components/ConfirmDialog";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/geofence")({
   head: () => ({ meta: [{ title: "Géozone — MotoTrack BF" }] }),
   component: GeofencePage,
 });
 
-type Shape = "circle" | "rect" | "poly";
-type Zone = {
-  id: string;
+type EditDraft = {
+  id: string | null;
   name: string;
-  shape: Shape;
+  shape: "circle" | "rect";
   lat: number;
   lng: number;
   radius: number;
-  exit: boolean;
-  enter: boolean;
-  icon: typeof Home;
-  status: "in" | "out";
+  alertExit: boolean;
+  alertEnter: boolean;
 };
-
-const SEED: Zone[] = [
-  { id: "z1", name: "Maison", shape: "circle", lat: 12.364012, lng: -1.533847, radius: 250, exit: true, enter: false, icon: Home, status: "in" },
-  { id: "z2", name: "Bureau", shape: "circle", lat: 12.371, lng: -1.519, radius: 180, exit: true, enter: true, icon: MapPin, status: "out" },
-  { id: "z3", name: "Parking HETEC", shape: "rect", lat: 12.357, lng: -1.541, radius: 120, exit: false, enter: true, icon: MapPin, status: "out" },
-];
 
 function GeofencePage() {
   const telemetry = useApp((s) => s.telemetry);
-  const [zones, setZones] = useState<Zone[]>(SEED);
-  const [editing, setEditing] = useState<Zone>({ ...SEED[0] });
+  const zones = useApp((s) => s.zones);
+  const device = useApp((s) => s.device);
 
-  const select = (z: Zone) => setEditing({ ...z });
+  const [editing, setEditing] = useState<EditDraft>({
+    id: null, name: "", shape: "circle",
+    lat: telemetry.lat, lng: telemetry.lng,
+    radius: 250, alertExit: true, alertEnter: false,
+  });
+
+  const select = (z: Zone) =>
+    setEditing({
+      id: z.id, name: z.name, shape: z.shape, lat: z.lat, lng: z.lng,
+      radius: z.radius, alertExit: z.alertExit, alertEnter: z.alertEnter,
+    });
 
   const reset = () =>
     setEditing({
-      id: `z${Date.now()}`,
-      name: "",
-      shape: "circle",
-      lat: telemetry.lat,
-      lng: telemetry.lng,
-      radius: 250,
-      exit: true,
-      enter: false,
-      icon: MapPin,
-      status: "out",
+      id: null, name: "", shape: "circle",
+      lat: telemetry.lat, lng: telemetry.lng,
+      radius: 250, alertExit: true, alertEnter: false,
     });
 
   const save = async () => {
+    if (!device) { await notify({ title: "Tracker non provisionné", tone: "warning" }); return; }
     if (!editing.name.trim()) {
-      await notify({ title: "Nom requis", description: "Donnez un nom à la zone avant d'enregistrer.", tone: "warning" });
+      await notify({ title: "Nom requis", description: "Donnez un nom à la zone.", tone: "warning" });
       return;
     }
-    const exists = zones.some((z) => z.id === editing.id);
     const ok = await confirm({
-      title: exists ? "Enregistrer les modifications ?" : "Créer cette nouvelle zone ?",
-      description: `« ${editing.name} » — rayon ${editing.radius} m. Le tracker sera mis à jour.`,
+      title: editing.id ? "Enregistrer les modifications ?" : "Créer cette nouvelle zone ?",
+      description: `« ${editing.name} » — rayon ${editing.radius} m.`,
       tone: "warning",
-      confirmLabel: exists ? "Enregistrer" : "Créer",
+      confirmLabel: editing.id ? "Enregistrer" : "Créer",
     });
     if (!ok) return;
-    setZones((zs) => (exists ? zs.map((z) => (z.id === editing.id ? editing : z)) : [...zs, editing]));
+
+    const payload = {
+      device_id: device.id,
+      name: editing.name.trim(),
+      shape: editing.shape,
+      lat: editing.lat, lng: editing.lng,
+      radius_m: editing.radius,
+      alert_on_exit: editing.alertExit,
+      alert_on_enter: editing.alertEnter,
+      active: true,
+    };
+    const { error } = editing.id
+      ? await supabase.from("geofences").update(payload).eq("id", editing.id)
+      : await supabase.from("geofences").insert(payload);
+    if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
     await notify({ title: "Zone enregistrée", tone: "success" });
+    reset();
   };
 
   const remove = async (z: Zone) => {
     const ok = await confirm({
       title: "Supprimer cette zone ?",
       description: `« ${z.name} » sera retirée et les alertes associées arrêtées.`,
-      tone: "danger",
-      confirmLabel: "Supprimer",
+      tone: "danger", confirmLabel: "Supprimer",
     });
     if (!ok) return;
-    setZones((zs) => zs.filter((x) => x.id !== z.id));
+    const { error } = await supabase.from("geofences").delete().eq("id", z.id);
+    if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
     if (editing.id === z.id) reset();
   };
+
+  // Compute live distance to centre of editing zone
+  const distToEdit = haversine(telemetry.lat, telemetry.lng, editing.lat, editing.lng);
+  const inside = distToEdit <= editing.radius;
 
   return (
     <AppShell fullBleed>
@@ -88,17 +102,33 @@ function GeofencePage() {
           center={[telemetry.lat, telemetry.lng]}
           heading={telemetry.heading}
           followVehicle={false}
-          zones={zones}
-          editingZone={editing}
+          zones={zones.map((z) => ({
+            id: z.id, shape: z.shape, lat: z.lat, lng: z.lng, radius: z.radius, name: z.name,
+            status: haversine(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
+          }))}
+          editingZone={{
+            id: editing.id ?? "draft", shape: editing.shape,
+            lat: editing.lat, lng: editing.lng, radius: editing.radius,
+          }}
           onMapClick={(lat, lng) => setEditing((e) => ({ ...e, lat, lng }))}
         />
       </div>
 
       <div className="absolute top-3 right-3 z-20 glass-strong px-4 py-3 flex items-center gap-3">
-        <span className="size-2.5 rounded-full bg-[var(--accent-green)] pulse-dot" />
+        <span
+          className="size-2.5 rounded-full pulse-dot"
+          style={{ background: inside ? "var(--accent-green)" : "var(--accent-amber)" }}
+        />
         <div>
-          <div className="text-xs font-semibold text-[var(--accent-green)]">Véhicule dans la zone</div>
-          <div className="text-[10px] mono text-[var(--text-secondary)]">Distance du centre: 184 m</div>
+          <div
+            className="text-xs font-semibold"
+            style={{ color: inside ? "var(--accent-green)" : "var(--accent-amber)" }}
+          >
+            {inside ? "Véhicule dans la zone" : "Véhicule hors zone"}
+          </div>
+          <div className="text-[10px] mono text-[var(--text-secondary)]">
+            Distance: {Math.round(distToEdit)} m
+          </div>
         </div>
       </div>
 
@@ -109,9 +139,8 @@ function GeofencePage() {
         </div>
 
         <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed -mt-2">
-          Cliquez sur la carte pour déplacer le centre de la zone en cours d'édition.
+          Cliquez sur la carte pour déplacer le centre de la zone en édition.
         </p>
-
 
         <div className="space-y-2">
           <Label>Nom de la zone</Label>
@@ -126,11 +155,7 @@ function GeofencePage() {
         <div className="space-y-2">
           <Label>Forme</Label>
           <div className="flex bg-[var(--bg-elevated)] rounded-md p-1">
-            {([
-              { id: "circle", label: "Cercle" },
-              { id: "rect", label: "Rectangle" },
-              { id: "poly", label: "Polygone" },
-            ] as const).map((s) => (
+            {([{ id: "circle", label: "Cercle" }, { id: "rect", label: "Rectangle" }] as const).map((s) => (
               <button
                 key={s.id}
                 onClick={() => setEditing({ ...editing, shape: s.id })}
@@ -143,22 +168,8 @@ function GeofencePage() {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1.5">
-            <Label>LAT</Label>
-            <input
-              value={editing.lat}
-              onChange={(e) => setEditing({ ...editing, lat: parseFloat(e.target.value) || 0 })}
-              className="w-full h-9 px-2.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-xs mono outline-none"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>LNG</Label>
-            <input
-              value={editing.lng}
-              onChange={(e) => setEditing({ ...editing, lng: parseFloat(e.target.value) || 0 })}
-              className="w-full h-9 px-2.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-xs mono outline-none"
-            />
-          </div>
+          <Field label="LAT" value={editing.lat.toFixed(6)} onChange={(v) => setEditing({ ...editing, lat: parseFloat(v) || 0 })} />
+          <Field label="LNG" value={editing.lng.toFixed(6)} onChange={(v) => setEditing({ ...editing, lng: parseFloat(v) || 0 })} />
         </div>
 
         <button
@@ -171,13 +182,10 @@ function GeofencePage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label>Rayon</Label>
-            <span className="text-xs mono text-[var(--accent-cyan)]">{editing.radius}m</span>
+            <span className="text-xs mono text-[var(--accent-cyan)]">{editing.radius} m</span>
           </div>
           <input
-            type="range"
-            min={50}
-            max={5000}
-            step={10}
+            type="range" min={50} max={5000} step={10}
             value={editing.radius}
             onChange={(e) => setEditing({ ...editing, radius: parseInt(e.target.value) })}
             className="w-full accent-[var(--accent-primary)]"
@@ -186,51 +194,43 @@ function GeofencePage() {
 
         <div className="space-y-2 pt-2 border-t border-[var(--border)]">
           <Label>Alertes</Label>
-          <Toggle
-            label="Alerte à la sortie"
-            checked={editing.exit}
-            onChange={(v) => setEditing({ ...editing, exit: v })}
-          />
-          <Toggle
-            label="Alerte à l'entrée"
-            checked={editing.enter}
-            onChange={(v) => setEditing({ ...editing, enter: v })}
-          />
+          <Toggle label="Alerte à la sortie" checked={editing.alertExit} onChange={(v) => setEditing({ ...editing, alertExit: v })} />
+          <Toggle label="Alerte à l'entrée" checked={editing.alertEnter} onChange={(v) => setEditing({ ...editing, alertEnter: v })} />
         </div>
 
         <button
           onClick={save}
           className="w-full h-11 rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] text-sm font-semibold hover:opacity-90 transition-opacity"
         >
-          Enregistrer la zone
+          {editing.id ? "Enregistrer la zone" : "Créer la zone"}
         </button>
 
         <div className="pt-4 border-t border-[var(--border)] space-y-2">
           <Label>Zones existantes ({zones.length})</Label>
-          {zones.map((z) => (
-            <div
-              key={z.id}
-              className={`card-elev p-2.5 flex items-center gap-2.5 cursor-pointer transition-colors ${editing.id === z.id ? "ring-1 ring-[var(--accent-primary)]" : "hover:bg-[var(--bg-elevated)]"}`}
-              onClick={() => select(z)}
-            >
-              <z.icon className="size-4 text-[var(--text-secondary)]" />
-              <span className="text-xs flex-1 truncate">{z.name}</span>
-              <span
-                className="size-2 rounded-full"
-                style={{ background: z.status === "in" ? "var(--accent-green)" : "var(--text-dim)" }}
-              />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  remove(z);
-                }}
-                className="text-[var(--text-secondary)] hover:text-[var(--accent-red)]"
-                aria-label={`Supprimer ${z.name}`}
+          {zones.length === 0 && (
+            <p className="text-[11px] text-[var(--text-secondary)]">Aucune zone définie pour le moment.</p>
+          )}
+          {zones.map((z) => {
+            const inZone = haversine(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius;
+            return (
+              <div
+                key={z.id}
+                className={`card-elev p-2.5 flex items-center gap-2.5 cursor-pointer transition-colors ${editing.id === z.id ? "ring-1 ring-[var(--accent-primary)]" : "hover:bg-[var(--bg-elevated)]"}`}
+                onClick={() => select(z)}
               >
-                <Trash2 className="size-3.5" />
-              </button>
-            </div>
-          ))}
+                <MapPin className="size-4 text-[var(--text-secondary)]" />
+                <span className="text-xs flex-1 truncate">{z.name}</span>
+                <span className="size-2 rounded-full" style={{ background: inZone ? "var(--accent-green)" : "var(--text-dim)" }} />
+                <button
+                  onClick={(e) => { e.stopPropagation(); remove(z); }}
+                  className="text-[var(--text-secondary)] hover:text-[var(--accent-red)]"
+                  aria-label={`Supprimer ${z.name}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            );
+          })}
           <button
             onClick={reset}
             className="w-full h-9 rounded-md border border-dashed border-[var(--border-active)] text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-primary)] flex items-center justify-center gap-1.5"
@@ -243,28 +243,38 @@ function GeofencePage() {
   );
 }
 
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000, toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full h-9 px-2.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-xs mono outline-none"
+      />
+    </div>
+  );
+}
+
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">
-      {children}
-    </label>
+    <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">{children}</label>
   );
 }
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className="w-full flex items-center justify-between cursor-pointer py-1"
-    >
+    <button type="button" onClick={() => onChange(!checked)} className="w-full flex items-center justify-between py-1">
       <span className="text-xs">{label}</span>
-      <span
-        className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}
-      >
-        <span
-          className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`}
-        />
+      <span className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}>
+        <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
       </span>
     </button>
   );

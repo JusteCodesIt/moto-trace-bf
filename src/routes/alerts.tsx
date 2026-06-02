@@ -7,6 +7,7 @@ import { useApp } from "@/lib/store";
 import { relTime } from "@/lib/format";
 import { useState } from "react";
 import { confirm, notify } from "@/components/ConfirmDialog";
+import { supabase } from "@/integrations/supabase/client";
 import illusAlerts from "@/assets/illus-alerts.png";
 
 export const Route = createFileRoute("/alerts")({
@@ -24,13 +25,12 @@ const sevColor: Record<string, string> = {
 
 function AlertsPage() {
   const { alerts, markAllRead, markAlertRead, unreadAlerts } = useApp();
-  const [deleted, setDeleted] = useState<Set<string>>(new Set());
-  const visible = alerts.filter((a) => !deleted.has(a.id));
-  const unread = visible.filter((a) => !a.read).length || unreadAlerts();
+  const visible = alerts;
+  const unread = unreadAlerts();
   const [filter, setFilter] = useState<string>("Tous");
 
   const filtered = filter === "Tous" ? visible : visible.filter((a) => a.title.toLowerCase().includes(filter.toLowerCase()));
-  const riskScore = Math.min(100, visible.filter((a) => !a.read).length * 12);
+  const riskScore = Math.min(100, unread * 12);
 
   const onMarkAll = async () => {
     const ok = await confirm({
@@ -41,7 +41,8 @@ function AlertsPage() {
     });
     if (ok) {
       markAllRead();
-      await notify({ title: "Toutes les alertes ont été marquées lues", tone: "success" });
+      await supabase.from("alerts").update({ read: true }).in("id", visible.filter((a) => !a.read).map((a) => a.id));
+      await notify({ title: "Toutes les alertes marquées lues", tone: "success" });
     }
   };
 
@@ -52,13 +53,21 @@ function AlertsPage() {
       tone: "danger",
       confirmLabel: "Supprimer",
     });
-    if (ok) setDeleted((d) => new Set(d).add(id));
+    if (ok) {
+      const { error } = await supabase.from("alerts").delete().eq("id", id);
+      if (error) await notify({ title: "Erreur", description: error.message, tone: "danger" });
+    }
+  };
+
+  const onMark = async (id: string) => {
+    markAlertRead(id);
+    await supabase.from("alerts").update({ read: true }).eq("id", id);
   };
 
   const onLocate = async (lat: number, lng: number) => {
     await notify({
       title: "Position de l'alerte",
-      description: `${lat.toFixed(5)}, ${lng.toFixed(5)} — la position sera ouverte dans la carte.`,
+      description: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
       tone: "info",
     });
   };
@@ -159,7 +168,7 @@ function AlertsPage() {
                 <div className="flex items-center gap-1 shrink-0">
                   {!a.read && (
                     <button
-                      onClick={() => markAlertRead(a.id)}
+                      onClick={() => onMark(a.id)}
                       aria-label="Marquer comme lu"
                       className="size-8 grid place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--accent-green)] hover:bg-[var(--bg-elevated)]"
                     >

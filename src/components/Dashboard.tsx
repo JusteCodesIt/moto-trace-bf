@@ -20,18 +20,24 @@ import {
   X,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
-import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
 import { MapCanvas } from "./MapCanvas";
 import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { confirm, notify } from "./ConfirmDialog";
 
+function distM(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000, toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 export function Dashboard() {
   const {
     vehicleName,
     telemetry,
+    hasTelemetry,
     trail,
-    setTelemetry,
     socketStatus,
     leftPanelOpen,
     setLeftPanelOpen,
@@ -41,6 +47,7 @@ export function Dashboard() {
     setMapStyle,
     alerts,
     unreadAlerts,
+    zones,
   } = useApp();
 
   const [recenterTick, setRecenterTick] = useState(0);
@@ -49,13 +56,6 @@ export function Dashboard() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // start the mock stream
-  useEffect(() => {
-    startTelemetryStream();
-    const unsub = subscribeTelemetry(setTelemetry);
-    return () => unsub();
-  }, [setTelemetry]);
 
   // fullscreen sync
   useEffect(() => {
@@ -72,6 +72,10 @@ export function Dashboard() {
         center={[telemetry.lat, telemetry.lng]}
         heading={telemetry.heading}
         trail={trail}
+        zones={zones.filter((z) => z.active).map((z) => ({
+          id: z.id, shape: z.shape, lat: z.lat, lng: z.lng, radius: z.radius, name: z.name,
+          status: distM(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
+        }))}
         style={mapStyle}
         recenterTick={recenterTick}
         searchQuery={searchQuery}
@@ -307,6 +311,21 @@ export function Dashboard() {
           {Math.round(telemetry.heading)}° {bearingToCompass(telemetry.heading)}
         </div>
       </div>
+
+      {/* ─── EMPTY STATE: no telemetry yet ─── */}
+      {!hasTelemetry && (
+        <div className="absolute inset-x-3 top-[88px] z-20 md:left-1/2 md:-translate-x-1/2 md:inset-x-auto md:max-w-md">
+          <div className="glass-strong p-4 rounded-lg border border-[var(--accent-amber)]/40">
+            <div className="text-xs uppercase tracking-wider text-[var(--accent-amber)] font-semibold mb-1">
+              En attente du tracker
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              Aucune trame reçue du tracker ESP32-S3 pour le moment. La carte affichera la position dès que le dispositif enverra sa première trame HTTPS signée.
+              Configurez le code de jumelage et la clé HMAC depuis <a className="text-[var(--accent-cyan)] hover:underline" href="/settings">Paramètres</a>.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

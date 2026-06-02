@@ -98,14 +98,18 @@ export function Sidebar() {
           )}
           {expanded && <span>Réduire</span>}
         </button>
-        <Link
-          to="/auth/login"
+        <button
+          type="button"
+          onClick={async () => {
+            const { signOut } = await import("@/lib/auth");
+            await signOut();
+          }}
           title={!expanded ? "Déconnexion" : undefined}
-          className="flex items-center gap-3 px-3 h-10 rounded-[10px] text-sm text-[var(--text-secondary)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-elevated)]/60"
+          className="w-full flex items-center gap-3 px-3 h-10 rounded-[10px] text-sm text-[var(--text-secondary)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-elevated)]/60"
         >
           <LogOut className="size-[18px]" />
           {expanded && <span>Déconnexion</span>}
-        </Link>
+        </button>
       </div>
     </aside>
   );
