@@ -346,38 +346,42 @@ function DeviceSection() {
       <Card
         title="État du module"
         action={
-          <span className={`text-[10px] mono px-2 py-0.5 rounded ${pairing === "paired" ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]" : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"}`}>
-            {pairing === "paired" ? "COUPLÉ" : pairing === "scanning" ? "EN COURS…" : "NON COUPLÉ"}
+          <span className={`text-[10px] mono px-2 py-0.5 rounded ${device ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]" : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"}`}>
+            {device ? "COUPLÉ" : "EN ATTENTE"}
           </span>
         }
       >
         <div className="space-y-2 text-xs">
-          <Row k="Identifiant" v="MT-BF-001" />
-          <Row k="Firmware" v="v1.4.2 (2026-04-30)" />
-          <Row k="Modem" v="SIM7600G · LTE Cat-4" />
-          <Row k="GPS" v="u-blox MAX-M8Q · 9 satellites" />
-          <Row k="Dernier ping" v="il y a 4 s" />
+          <Row k="Device ID" v={device?.id ?? "—"} />
+          <Row k="Nom" v={device?.name ?? "—"} />
+          <Row k="Endpoint d'ingestion" v={ingestUrl} />
+          <Row k="Clé rotée" v={keyRotatedAt ? new Date(keyRotatedAt).toLocaleString("fr-FR") : "—"} />
         </div>
         <div className="flex gap-2 mt-4">
           <button onClick={onPing} className="flex-1 h-9 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] flex items-center justify-center gap-1.5">
-            <Radio className="size-3.5" /> Tester la connexion
+            <Radio className="size-3.5" /> Tester (envoie ping)
           </button>
           <button onClick={onPair} className="flex-1 h-9 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 flex items-center justify-center gap-1.5">
-            <CheckCircle2 className="size-3.5" /> Coupler un module
+            <CheckCircle2 className="size-3.5" /> Voir code d'appairage
           </button>
         </div>
       </Card>
 
-      <Card title="Code d'appairage">
-        <p className="text-xs text-[var(--text-secondary)] mb-3">
-          Connectez-vous au point d'accès <span className="mono text-[var(--accent-cyan)]">MotoTrack-Setup</span> du tracker, puis saisissez ce code pour l'associer à votre compte.
+      <Card title="Identifiants à flasher dans le firmware ESP32-S3">
+        <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
+          Ces trois valeurs doivent être compilées dans le firmware. Le tracker les utilise pour
+          signer chaque trame POST sur <code className="mono text-[var(--accent-cyan)]">/api/public/ingest</code> via HMAC-SHA256.
         </p>
-        <div className="flex items-center gap-2 p-3 rounded-md bg-[var(--bg-elevated)]">
-          <span className="flex-1 text-lg font-bold mono tracking-widest text-[var(--accent-primary)]">{pairCode}</span>
-          <button onClick={() => copy("Code", pairCode)} className="size-8 grid place-items-center rounded-md hover:bg-[var(--bg-surface)]">
-            <Copy className="size-3.5" />
-          </button>
+        <div className="space-y-2">
+          <CodeRow label="DEVICE_ID" value={device?.id ?? ""} onCopy={copy} />
+          <CodeRow label="HMAC_SECRET" value={hmacSecret} onCopy={copy} mask />
+          <CodeRow label="INGEST_URL" value={ingestUrl} onCopy={copy} />
         </div>
+        {device?.pairing_code && (
+          <div className="mt-3 text-[11px] text-[var(--text-secondary)]">
+            Code de jumelage (1ère mise en service) : <span className="mono text-[var(--accent-primary)] font-bold">{device.pairing_code}</span>
+          </div>
+        )}
       </Card>
 
       <Card
