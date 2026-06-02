@@ -46,6 +46,7 @@ interface State {
   socketStatus: "connected" | "reconnecting" | "offline";
   zones: Zone[];
   alerts: Alert[];
+  trips: Trip[];
   // ui
   leftPanelOpen: boolean;
   rightPanelTab: "live" | "trips" | "alerts";
