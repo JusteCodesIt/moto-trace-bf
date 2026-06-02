@@ -229,13 +229,25 @@ function AntiTheftSection() {
 }
 
 function DeviceSection() {
-  const [pairing, setPairing] = useState<"idle" | "scanning" | "paired">("paired");
+  const [device, setDevice] = useState<{ id: string; name: string; pairing_code: string | null } | null>(null);
+  const [hmacSecret, setHmacSecret] = useState<string>("");
+  const [keyRotatedAt, setKeyRotatedAt] = useState<string | null>(null);
+  const [ingestUrl, setIngestUrl] = useState("/api/public/ingest");
   const [apiUrl, setApiUrl] = useState("https://api.mototrack.bf/ingest");
   const [apn, setApn] = useState("internet.orange.bf");
   const [wifiSsid, setWifiSsid] = useState("MotoTrack-Home");
   const [wifiPwd, setWifiPwd] = useState("");
-  const [hmacSecret, setHmacSecret] = useState("a7f3-c8d1-92be-44a0-7e5f-1b2c-9d8e-3f4a");
-  const [pairCode] = useState("BF-001-X7Q2");
+
+  useState(() => {
+    (async () => {
+      const { ensureMyDevice } = await import("@/lib/devices.functions");
+      const res = await ensureMyDevice();
+      setDevice(res.device);
+      setHmacSecret(res.hmacSecret ?? "");
+      setKeyRotatedAt(res.keyRotatedAt);
+      setIngestUrl(`${window.location.origin}${res.ingestUrl}`);
+    })();
+  });
 
   const copy = async (label: string, value: string) => {
     try {
@@ -247,44 +259,43 @@ function DeviceSection() {
   };
 
   const onReboot = async () => {
+    if (!device) return;
     const ok = await confirm({
       title: "Redémarrer le module ESP32-S3 ?",
-      description: "Le tracker sera hors-ligne pendant ~30 secondes.",
+      description: "Le tracker exécutera la commande à sa prochaine connexion 4G.",
       tone: "warning",
       confirmLabel: "Redémarrer",
     });
-    if (ok) await notify({ title: "Reboot envoyé via SIM7600G", tone: "success" });
+    if (!ok) return;
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("commands").insert({ device_id: device.id, kind: "reboot", issued_by: user.id });
+    await notify({ title: "Reboot programmé", tone: "success" });
   };
 
   const onPair = async () => {
-    setPairing("scanning");
-    const ok = await confirm({
-      title: "Coupler un nouveau module ?",
-      description: `Saisissez le code « ${pairCode} » sur le portail captif WiFi de l'ESP32-S3 (SSID MotoTrack-Setup).`,
+    if (!device?.pairing_code) return;
+    await notify({
+      title: "Code de jumelage",
+      description: `Saisissez « ${device.pairing_code} » dans le firmware ESP32-S3 puis flashez avec le device-id et la clé HMAC.`,
       tone: "info",
-      confirmLabel: "J'ai saisi le code",
     });
-    if (ok) {
-      setPairing("paired");
-      await notify({ title: "Module couplé", description: "Connexion HMAC vérifiée.", tone: "success" });
-    } else {
-      setPairing("idle");
-    }
   };
 
   const onRotateHmac = async () => {
+    if (!device) return;
     const ok = await confirm({
       title: "Générer une nouvelle clé HMAC ?",
-      description: "L'ancienne clé sera invalidée. Vous devrez la flasher sur l'ESP32-S3.",
+      description: "L'ancienne clé sera invalidée immédiatement. Vous devrez re-flasher le firmware avec la nouvelle clé.",
       tone: "danger",
       confirmLabel: "Régénérer",
     });
     if (!ok) return;
-    const hex = "0123456789abcdef";
-    const chunks = Array.from({ length: 8 }, () =>
-      Array.from({ length: 4 }, () => hex[Math.floor(Math.random() * 16)]).join(""),
-    );
-    setHmacSecret(chunks.join("-"));
+    const { rotateDeviceKey } = await import("@/lib/devices.functions");
+    const res = await rotateDeviceKey({ data: { deviceId: device.id } });
+    setHmacSecret(res.hmacSecret);
+    setKeyRotatedAt(new Date().toISOString());
     await notify({ title: "Clé HMAC régénérée", tone: "success" });
   };
 
