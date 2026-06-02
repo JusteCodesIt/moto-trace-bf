@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MapCanvas } from "@/components/MapCanvas";
 import { useApp } from "@/lib/store";
-import { useEffect } from "react";
-import { startTelemetryStream, subscribeTelemetry } from "@/lib/mock";
 import { speedColor } from "@/lib/format";
 
 export const Route = createFileRoute("/share/$token")({
@@ -16,12 +14,7 @@ export const Route = createFileRoute("/share/$token")({
 });
 
 function SharePage() {
-  const { telemetry, trail, setTelemetry } = useApp();
-
-  useEffect(() => {
-    startTelemetryStream();
-    return subscribeTelemetry(setTelemetry);
-  }, [setTelemetry]);
+  const { telemetry, trail } = useApp();
 
   return (
     <div className="h-screen w-screen relative bg-[var(--bg-base)] text-[var(--text-primary)] overflow-hidden">
