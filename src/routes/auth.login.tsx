@@ -10,8 +10,8 @@ export const Route = createFileRoute("/auth/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("admin@gmail.com");
+  const [password, setPassword] = useState("admin2026");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,13 +22,41 @@ function LoginPage() {
     });
   }, [navigate]);
 
+  const signInOrProvision = async (mail: string, pwd: string) => {
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
+    if (!signInError) return;
+    // Account doesn't exist yet → create then sign in.
+    const msg = signInError.message?.toLowerCase() ?? "";
+    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+      const { error: signUpError } = await supabase.auth.signUp({ email: mail, password: pwd });
+      if (signUpError && !signUpError.message?.toLowerCase().includes("already")) throw signUpError;
+      const { error: retryError } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
+      if (retryError) throw retryError;
+      return;
+    }
+    throw signInError;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setError(null);
     try {
-      const fn = mode === "signin" ? supabase.auth.signInWithPassword : supabase.auth.signUp;
-      const { error } = await fn({ email, password });
-      if (error) throw error;
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+      }
+      await signInOrProvision(email, password);
+      navigate({ to: "/", replace: true });
+    } catch (err: any) {
+      setError(err?.message ?? "Erreur de connexion");
+    } finally { setLoading(false); }
+  };
+
+  const quickAdmin = async () => {
+    setLoading(true); setError(null);
+    try {
+      setEmail("admin@gmail.com"); setPassword("admin2026");
+      await signInOrProvision("admin@gmail.com", "admin2026");
       navigate({ to: "/", replace: true });
     } catch (err: any) {
       setError(err?.message ?? "Erreur de connexion");
