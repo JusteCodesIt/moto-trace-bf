@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MapPin, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, MapPin, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { MapCanvas } from "@/components/MapCanvas";
@@ -27,6 +27,7 @@ function GeofencePage() {
   const telemetry = useApp((s) => s.telemetry);
   const zones = useApp((s) => s.zones);
   const device = useApp((s) => s.device);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const [editing, setEditing] = useState<EditDraft>({
     id: null, name: "", shape: "circle",
@@ -132,13 +133,51 @@ function GeofencePage() {
         </div>
       </div>
 
-      <aside className="absolute top-3 left-3 bottom-3 z-20 w-[320px] glass-strong overflow-y-auto p-5 space-y-5">
-        <div className="flex items-center gap-2">
-          <MapPin className="size-5 text-[var(--accent-primary)]" />
-          <h2 className="text-base font-semibold">Géozones</h2>
+      {/* Floating launcher: visible when panel is closed */}
+      {!panelOpen && (
+        <button
+          onClick={() => setPanelOpen(true)}
+          className="absolute z-20 bottom-4 left-1/2 -translate-x-1/2 md:left-3 md:translate-x-0 md:top-3 md:bottom-auto glass-strong px-4 h-11 rounded-full flex items-center gap-2 text-xs font-semibold shadow-lg hover:bg-[var(--bg-elevated)] transition-colors"
+          aria-label="Ouvrir le panneau des géozones"
+        >
+          <MapPin className="size-4 text-[var(--accent-primary)]" />
+          Géozones ({zones.length})
+          <ChevronDown className="size-3.5 -rotate-90 md:rotate-0" />
+        </button>
+      )}
+
+      {/* Backdrop on mobile when panel is open */}
+      {panelOpen && (
+        <button
+          aria-label="Fermer"
+          onClick={() => setPanelOpen(false)}
+          className="md:hidden absolute inset-0 z-10 bg-black/30 backdrop-blur-[2px]"
+        />
+      )}
+
+      {/* Collapsible panel: bottom sheet on mobile, left drawer on desktop */}
+      <aside
+        className={`absolute z-20 glass-strong overflow-hidden transition-transform duration-300 ease-out
+          left-0 right-0 bottom-0 max-h-[75vh] rounded-t-2xl
+          md:left-3 md:right-auto md:top-3 md:bottom-3 md:w-[320px] md:max-h-none md:rounded-2xl
+          ${panelOpen ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-y-0 md:-translate-x-[110%]"}`}
+      >
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[var(--border)] sticky top-0 bg-[var(--bg-surface)]/80 backdrop-blur z-10">
+          <div className="flex items-center gap-2">
+            <MapPin className="size-5 text-[var(--accent-primary)]" />
+            <h2 className="text-base font-semibold">Géozones</h2>
+          </div>
+          <button
+            onClick={() => setPanelOpen(false)}
+            className="size-8 grid place-items-center rounded-md hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            aria-label="Fermer le panneau"
+          >
+            <X className="size-4" />
+          </button>
         </div>
 
-        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed -mt-2">
+        <div className="overflow-y-auto px-5 py-4 space-y-5" style={{ maxHeight: "calc(75vh - 56px)" }}>
+        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
           Cliquez sur la carte pour déplacer le centre de la zone en édition.
         </p>
 
@@ -192,7 +231,7 @@ function GeofencePage() {
           />
         </div>
 
-        <div className="space-y-2 pt-2 border-t border-[var(--border)]">
+        <div className="space-y-1 pt-2 border-t border-[var(--border)]">
           <Label>Alertes</Label>
           <Toggle label="Alerte à la sortie" checked={editing.alertExit} onChange={(v) => setEditing({ ...editing, alertExit: v })} />
           <Toggle label="Alerte à l'entrée" checked={editing.alertEnter} onChange={(v) => setEditing({ ...editing, alertEnter: v })} />
@@ -238,6 +277,7 @@ function GeofencePage() {
             <Plus className="size-3.5" /> Nouvelle zone
           </button>
         </div>
+        </div>
       </aside>
     </AppShell>
   );
@@ -271,10 +311,20 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="w-full flex items-center justify-between py-1">
-      <span className="text-xs">{label}</span>
-      <span className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}>
-        <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="w-full flex items-center justify-between gap-3 py-2.5 px-1 rounded-md hover:bg-[var(--bg-elevated)]/40 transition-colors text-left"
+    >
+      <span className="text-xs flex-1">{label}</span>
+      <span
+        className={`relative inline-flex shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)] border border-[var(--border)]"}`}
+      >
+        <span
+          className={`absolute top-0.5 size-5 rounded-full bg-white shadow-md transition-transform duration-200 ${checked ? "translate-x-[22px]" : "translate-x-0.5"}`}
+        />
       </span>
     </button>
   );
