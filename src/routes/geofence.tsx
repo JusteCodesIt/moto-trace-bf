@@ -27,6 +27,7 @@ function GeofencePage() {
   const telemetry = useApp((s) => s.telemetry);
   const zones = useApp((s) => s.zones);
   const device = useApp((s) => s.device);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const [editing, setEditing] = useState<EditDraft>({
     id: null, name: "", shape: "circle",
