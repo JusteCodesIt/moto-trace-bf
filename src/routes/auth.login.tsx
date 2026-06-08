@@ -128,6 +128,13 @@ function LoginPage() {
           </button>
 
           <button
+            type="button" onClick={quickAdmin} disabled={loading}
+            className="w-full h-10 rounded-md border border-[var(--border-active)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-primary)] transition-colors"
+          >
+            Connexion admin (admin@gmail.com)
+          </button>
+
+          <button
             type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(null); }}
             className="w-full text-center text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)]"
           >
