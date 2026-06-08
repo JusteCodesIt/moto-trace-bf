@@ -8,6 +8,7 @@ import {
   Link,
 } from "@tanstack/react-router";
 import { Toaster } from "react-hot-toast";
+import { ThemeProvider } from "@/lib/theme";
 
 import appCss from "../styles.css?url";
 
@@ -94,18 +95,20 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: "var(--bg-elevated)",
-            color: "var(--text-primary)",
-            border: "1px solid var(--border-active)",
-            fontSize: "13px",
-          },
-        }}
-      />
+      <ThemeProvider>
+        <Outlet />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: "var(--bg-elevated)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-active)",
+              fontSize: "13px",
+            },
+          }}
+        />
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
