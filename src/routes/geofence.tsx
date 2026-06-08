@@ -271,10 +271,20 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="w-full flex items-center justify-between py-1">
-      <span className="text-xs">{label}</span>
-      <span className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}>
-        <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="w-full flex items-center justify-between gap-3 py-2.5 px-1 rounded-md hover:bg-[var(--bg-elevated)]/40 transition-colors text-left"
+    >
+      <span className="text-xs flex-1">{label}</span>
+      <span
+        className={`relative inline-flex shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)] border border-[var(--border)]"}`}
+      >
+        <span
+          className={`absolute top-0.5 size-5 rounded-full bg-white shadow-md transition-transform duration-200 ${checked ? "translate-x-[22px]" : "translate-x-0.5"}`}
+        />
       </span>
     </button>
   );
