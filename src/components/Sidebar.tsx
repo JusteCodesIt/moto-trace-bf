@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "./ThemeToggle";
 
 const items = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -86,6 +87,7 @@ export function Sidebar() {
       </nav>
 
       <div className="p-2 border-t border-[var(--border)] shrink-0 space-y-1">
+        <ThemeToggle expanded={expanded} />
         <button
           onClick={() => setExpanded((v) => !v)}
           title={expanded ? "Réduire" : "Déplier"}

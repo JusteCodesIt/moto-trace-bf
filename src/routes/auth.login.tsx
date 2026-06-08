@@ -10,8 +10,8 @@ export const Route = createFileRoute("/auth/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("admin@gmail.com");
+  const [password, setPassword] = useState("admin2026");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,13 +22,41 @@ function LoginPage() {
     });
   }, [navigate]);
 
+  const signInOrProvision = async (mail: string, pwd: string) => {
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
+    if (!signInError) return;
+    // Account doesn't exist yet → create then sign in.
+    const msg = signInError.message?.toLowerCase() ?? "";
+    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+      const { error: signUpError } = await supabase.auth.signUp({ email: mail, password: pwd });
+      if (signUpError && !signUpError.message?.toLowerCase().includes("already")) throw signUpError;
+      const { error: retryError } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
+      if (retryError) throw retryError;
+      return;
+    }
+    throw signInError;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setError(null);
     try {
-      const fn = mode === "signin" ? supabase.auth.signInWithPassword : supabase.auth.signUp;
-      const { error } = await fn({ email, password });
-      if (error) throw error;
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+      }
+      await signInOrProvision(email, password);
+      navigate({ to: "/", replace: true });
+    } catch (err: any) {
+      setError(err?.message ?? "Erreur de connexion");
+    } finally { setLoading(false); }
+  };
+
+  const quickAdmin = async () => {
+    setLoading(true); setError(null);
+    try {
+      setEmail("admin@gmail.com"); setPassword("admin2026");
+      await signInOrProvision("admin@gmail.com", "admin2026");
       navigate({ to: "/", replace: true });
     } catch (err: any) {
       setError(err?.message ?? "Erreur de connexion");
@@ -97,6 +125,13 @@ function LoginPage() {
             className="w-full h-11 rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-60"
           >
             {loading ? "…" : mode === "signin" ? "Se connecter" : "Créer le compte"}
+          </button>
+
+          <button
+            type="button" onClick={quickAdmin} disabled={loading}
+            className="w-full h-10 rounded-md border border-[var(--border-active)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-primary)] transition-colors"
+          >
+            Connexion admin (admin@gmail.com)
           </button>
 
           <button
