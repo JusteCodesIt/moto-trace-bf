@@ -557,15 +557,21 @@ function CodeRow({ label, value, onCopy, mask }: { label: string; value: string;
 function Toggle({ label, defaultChecked = false }: { label: string; defaultChecked?: boolean }) {
   const [checked, setChecked] = useState(defaultChecked);
   return (
-    <label className="flex items-center justify-between cursor-pointer py-1.5">
-      <span className="text-xs">{label}</span>
-      <button
-        type="button"
-        onClick={() => setChecked((c) => !c)}
-        className={`relative w-9 h-5 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]"}`}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => setChecked((c) => !c)}
+      className="w-full flex items-center justify-between gap-3 py-2.5 px-1 rounded-md hover:bg-[var(--bg-elevated)]/40 transition-colors cursor-pointer text-left"
+    >
+      <span className="text-xs flex-1">{label}</span>
+      <span
+        className={`relative inline-flex shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)] border border-[var(--border)]"}`}
       >
-        <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
-      </button>
-    </label>
+        <span
+          className={`absolute top-0.5 size-5 rounded-full bg-white shadow-md transition-transform duration-200 ${checked ? "translate-x-[22px]" : "translate-x-0.5"}`}
+        />
+      </span>
+    </button>
   );
 }
