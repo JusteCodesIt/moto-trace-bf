@@ -235,7 +235,7 @@ function ThresholdsSection({ settings, save }: SectionProps) {
           device_id: dev.id,
           kind: "config",
           issued_by: user!.id,
-          payload: patch.thresholds,
+          payload: patch.thresholds as never,
         });
       }
     } catch { /* ignore */ }
