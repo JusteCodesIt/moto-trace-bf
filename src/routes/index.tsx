@@ -5,7 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Dashboard — MotoTrack BF" },
+      { title: "Dashboard — AutoTrack" },
       { name: "description", content: "Suivi GPS temps réel de votre moto." },
     ],
   }),

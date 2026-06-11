@@ -6,7 +6,7 @@ import { speedColor } from "@/lib/format";
 export const Route = createFileRoute("/share/$token")({
   head: () => ({
     meta: [
-      { title: "Position partagée — MotoTrack BF" },
+      { title: "Position partagée — AutoTrack" },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -30,7 +30,7 @@ function SharePage() {
             MT
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold truncate">MotoTrack #BF-001</div>
+            <div className="text-sm font-semibold truncate">AutoTrack #BF-001</div>
             <div className="text-[10px] mono text-[var(--text-secondary)]">Position partagée en direct</div>
           </div>
         </div>
@@ -53,7 +53,7 @@ function SharePage() {
       </div>
 
       <div className="absolute bottom-2 right-3 z-20 text-[10px] mono text-[var(--text-dim)]">
-        Partagé via MotoTrack BF
+        Partagé via AutoTrack
       </div>
     </div>
   );

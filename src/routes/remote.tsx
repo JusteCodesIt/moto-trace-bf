@@ -9,7 +9,7 @@ import { relTime } from "@/lib/format";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/remote")({
-  head: () => ({ meta: [{ title: "Contrôle distant — MotoTrack BF" }] }),
+  head: () => ({ meta: [{ title: "Contrôle distant — AutoTrack" }] }),
   component: RemotePage,
 });
 
@@ -106,7 +106,7 @@ function RemotePage() {
         {/* Hardware-capability note */}
         <div className="card-elev p-4 border-l-4 border-[var(--accent-cyan)] text-xs text-[var(--text-secondary)] leading-relaxed">
           <span className="font-semibold text-[var(--text-primary)]">Capacités matérielles :</span>{" "}
-          Le tracker MotoTrack BF (XIAO ESP32-S3 + MAX-M8Q + SIM7600G) supporte la téléportation
+          Le tracker AutoTrack (XIAO ESP32-S3 + MAX-M8Q + SIM7600G) supporte la téléportation
           GPS, le mode low-power et le reboot logiciel. La coupure moteur, l'avertisseur sonore
           et la LED utilisateur <b>ne sont pas installés</b> sur cette configuration et ne sont
           donc pas exposés ici.

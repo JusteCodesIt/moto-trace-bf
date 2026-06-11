@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { BarChart, Bar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 export const Route = createFileRoute("/stats")({
-  head: () => ({ meta: [{ title: "Analytics — MotoTrack BF" }] }),
+  head: () => ({ meta: [{ title: "Analytics — AutoTrack" }] }),
   component: StatsPage,
 });
 

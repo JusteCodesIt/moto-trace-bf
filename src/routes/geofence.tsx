@@ -8,7 +8,7 @@ import { confirm, notify } from "@/components/ConfirmDialog";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/geofence")({
-  head: () => ({ meta: [{ title: "Géozone — MotoTrack BF" }] }),
+  head: () => ({ meta: [{ title: "Géozone — AutoTrack" }] }),
   component: GeofencePage,
 });
 

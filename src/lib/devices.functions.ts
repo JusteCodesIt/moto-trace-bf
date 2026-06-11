@@ -21,7 +21,7 @@ export const ensureMyDevice = createServerFn({ method: "POST" })
       const pairing = Math.random().toString(36).slice(2, 8).toUpperCase();
       const { data: created, error } = await supabaseAdmin
         .from("devices")
-        .insert({ owner_id: userId, name: "MotoTrack", pairing_code: pairing })
+        .insert({ owner_id: userId, name: "AutoTrack", pairing_code: pairing })
         .select("id, name, plate, firmware, pairing_code, last_seen_at, is_online")
         .single();
       if (error) throw new Error(error.message);
