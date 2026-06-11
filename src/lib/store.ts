@@ -74,7 +74,7 @@ interface State {
 
 export const useApp = create<State>((set, get) => ({
   device: null,
-  vehicleName: "MotoTrack",
+  vehicleName: "AutoTrack",
   telemetry: OUAGA,
   hasTelemetry: false,
   trail: [],

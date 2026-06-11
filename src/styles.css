@@ -4,7 +4,7 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 
 /* ─────────────────────────────────────────────────────
-   MotoTrack BF — Premium Dark Design System
+   AutoTrack — Premium Dark Design System
    ───────────────────────────────────────────────────── */
 
 @theme inline {
@@ -23,7 +23,7 @@
   --color-border: var(--border);
   --color-border-active: var(--border-active);
 
-  /* shadcn aliases mapped onto MotoTrack tokens */
+  /* shadcn aliases mapped onto AutoTrack tokens */
   --color-background: var(--bg-base);
   --color-foreground: var(--text-primary);
   --color-card: var(--bg-surface);

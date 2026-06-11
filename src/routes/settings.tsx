@@ -1,13 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Settings as SettingsIcon, Bell, Shield, Smartphone, User, Sliders, Sparkles, Copy, RefreshCw, Wifi, Radio, Download, CheckCircle2 } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Bell, Shield, Smartphone, User, Sliders, Sparkles, Copy, RefreshCw, Wifi, Radio, Download, CheckCircle2, LogOut } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { SectionHero } from "@/components/SectionHero";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { confirm, notify } from "@/components/ConfirmDialog";
 import illusSettings from "@/assets/illus-settings.png";
+import { getMySettings, updateMySettings, type UserSettings } from "@/lib/settings.functions";
+import { signOut } from "@/lib/auth";
 
 export const Route = createFileRoute("/settings")({
-  head: () => ({ meta: [{ title: "Paramètres — MotoTrack BF" }] }),
+  head: () => ({ meta: [{ title: "Paramètres — AutoTrack" }] }),
   component: SettingsPage,
 });
 
@@ -19,8 +21,27 @@ const SECTIONS = [
   { id: "account", label: "Compte", icon: User },
 ];
 
+const ALERT_TYPES = ["Choc détecté", "Sortie géozone", "Batterie faible", "Excès de vitesse"];
+
+async function sha256(text: string) {
+  const buf = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function SettingsPage() {
   const [active, setActive] = useState("notif");
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+
+  useEffect(() => {
+    getMySettings().then((s) => setSettings(s ?? {}));
+  }, []);
+
+  const save = async (patch: Partial<UserSettings>) => {
+    const next = await updateMySettings({ data: { patch } });
+    setSettings(next);
+    return next;
+  };
 
   return (
     <AppShell>
@@ -29,7 +50,7 @@ function SettingsPage() {
           eyebrow="Configuration"
           icon={Sparkles}
           title="Paramètres du compte & de l'appareil"
-          description="Contrôlez vos notifications, vos seuils d'alerte, votre code PIN anti-vol et la connectivité du module ESP32-S3 — tout est centralisé ici."
+          description="Notifications, seuils, code PIN anti-vol et connectivité du module ESP32-S3 — tout est centralisé ici."
           image={illusSettings}
         />
 
@@ -47,11 +68,17 @@ function SettingsPage() {
           </nav>
 
           <div className="space-y-4">
-            {active === "notif" && <NotifSection />}
-            {active === "thresholds" && <ThresholdsSection />}
-            {active === "antitheft" && <AntiTheftSection />}
-            {active === "device" && <DeviceSection />}
-            {active === "account" && <AccountSection />}
+            {!settings ? (
+              <div className="card-elev p-6 text-xs text-[var(--text-secondary)]">Chargement des préférences…</div>
+            ) : (
+              <>
+                {active === "notif" && <NotifSection settings={settings} save={save} />}
+                {active === "thresholds" && <ThresholdsSection settings={settings} save={save} />}
+                {active === "antitheft" && <AntiTheftSection settings={settings} save={save} />}
+                {active === "device" && <DeviceSection settings={settings} save={save} />}
+                {active === "account" && <AccountSection settings={settings} save={save} />}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -62,7 +89,7 @@ function SettingsPage() {
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="card-elev p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2">
         <h3 className="text-sm font-semibold">{title}</h3>
         {action}
       </div>
@@ -71,91 +98,172 @@ function Card({ title, children, action }: { title: string; children: React.Reac
   );
 }
 
-function NotifSection() {
+type SectionProps = { settings: UserSettings; save: (p: Partial<UserSettings>) => Promise<UserSettings> };
+
+function NotifSection({ settings, save }: SectionProps) {
+  const notif = settings.notif ?? {};
+  const matrix = notif.matrix ?? {};
+  const [smsPhone, setSmsPhone] = useState(notif.smsPhone ?? "+226 70 00 00 00");
+
   const onTest = async () => {
     const ok = await confirm({
       title: "Envoyer une notification de test ?",
-      description: "Une notification push sera envoyée à cet appareil.",
+      description: "Une notification sera affichée en local.",
       tone: "info",
       confirmLabel: "Envoyer",
     });
-    if (ok) await notify({ title: "Notification envoyée", description: "Vérifiez votre centre de notifications.", tone: "success" });
+    if (!ok) return;
+    if ("Notification" in window) {
+      const perm = Notification.permission === "granted"
+        ? "granted"
+        : await Notification.requestPermission();
+      if (perm === "granted") {
+        new Notification("AutoTrack", { body: "Notification de test reçue." });
+      }
+    }
+    await notify({ title: "Notification envoyée", tone: "success" });
   };
+
+  const togglePush = async () => {
+    const enabled = !(notif.pushEnabled ?? true);
+    if (enabled && "Notification" in window && Notification.permission !== "granted") {
+      await Notification.requestPermission();
+    }
+    await save({ notif: { ...notif, pushEnabled: enabled } });
+    await notify({ title: enabled ? "Notifications push activées" : "Notifications push désactivées", tone: "success" });
+  };
+
+  const onSaveSms = async () => {
+    await save({ notif: { ...notif, smsPhone } });
+    await notify({ title: "Numéro SMS enregistré", tone: "success" });
+  };
+
+  const setMatrix = async (alert: string, channel: "push" | "sms" | "email", v: boolean) => {
+    const row = matrix[alert] ?? { push: true, sms: false, email: true };
+    const updated = { ...matrix, [alert]: { ...row, [channel]: v } };
+    await save({ notif: { ...notif, matrix: updated } });
+  };
+
   return (
     <>
       <Card title="Notifications push">
-        <p className="text-xs text-[var(--text-secondary)] mb-3">
-          Recevez des alertes en temps réel sur votre appareil.
-        </p>
-        <div className="flex items-center justify-between p-3 rounded-md bg-[var(--bg-elevated)]">
+        <div className="flex items-center justify-between p-3 rounded-md bg-[var(--bg-elevated)] gap-3">
           <div>
             <div className="text-sm font-medium">Statut</div>
-            <div className="text-xs text-[var(--accent-green)] mono">Activé · Chrome desktop</div>
+            <div className={`text-xs mono ${(notif.pushEnabled ?? true) ? "text-[var(--accent-green)]" : "text-[var(--text-secondary)]"}`}>
+              {(notif.pushEnabled ?? true) ? "Activé" : "Désactivé"}
+            </div>
           </div>
-          <button onClick={onTest} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border-active)]">
-            Tester
-          </button>
+          <div className="flex gap-2">
+            <button onClick={togglePush} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border-active)]">
+              {(notif.pushEnabled ?? true) ? "Désactiver" : "Activer"}
+            </button>
+            <button onClick={onTest} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+              Tester
+            </button>
+          </div>
         </div>
       </Card>
 
-      <Card title="Notifications SMS">
-        <div className="text-xs text-[var(--text-secondary)] mb-3">
-          Quota: <span className="mono text-[var(--accent-primary)]">14 / 100</span> ce mois
-        </div>
+      <Card title="Notifications SMS" action={
+        <button onClick={onSaveSms} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+          Enregistrer
+        </button>
+      }>
         <input
-          defaultValue="+226 70 12 34 56"
+          value={smsPhone}
+          onChange={(e) => setSmsPhone(e.target.value)}
+          placeholder="+226 70 00 00 00"
           className="w-full h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm mono outline-none focus:border-[var(--accent-primary)]"
         />
       </Card>
 
       <Card title="Matrice d'alertes">
         <div className="space-y-2">
-          {["Choc détecté", "Sortie géozone", "Batterie faible", "Excès de vitesse"].map((t) => (
-            <div key={t} className="grid grid-cols-[1fr_repeat(3,80px)] gap-2 items-center py-2 border-b border-[var(--border)] last:border-0">
-              <span className="text-sm">{t}</span>
-              {["Push", "SMS", "Email"].map((c) => (
-                <Toggle key={c} label={c} defaultChecked={c !== "SMS"} />
-              ))}
-            </div>
-          ))}
+          <div className="grid grid-cols-[1fr_repeat(3,64px)] gap-2 items-center text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold pb-1 border-b border-[var(--border)]">
+            <span>Type</span><span className="text-center">Push</span><span className="text-center">SMS</span><span className="text-center">Email</span>
+          </div>
+          {ALERT_TYPES.map((t) => {
+            const row = matrix[t] ?? { push: true, sms: false, email: true };
+            return (
+              <div key={t} className="grid grid-cols-[1fr_repeat(3,64px)] gap-2 items-center py-2 border-b border-[var(--border)] last:border-0">
+                <span className="text-sm">{t}</span>
+                {(["push", "sms", "email"] as const).map((c) => (
+                  <div key={c} className="flex justify-center">
+                    <ToggleSwitch checked={row[c]} onChange={(v) => setMatrix(t, c, v)} />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </Card>
     </>
   );
 }
 
-function ThresholdsSection() {
+function ThresholdsSection({ settings, save }: SectionProps) {
+  const t = settings.thresholds ?? {};
+  const [speed, setSpeed] = useState(String(t.speedKmh ?? 90));
+  const [shock, setShock] = useState(String(t.shockG ?? 2.5));
+  const [geo, setGeo] = useState(String(t.geofenceDelaySec ?? 30));
+  const [batt, setBatt] = useState(String(t.lowBatteryPct ?? 20));
+
   const onSave = async () => {
     const ok = await confirm({
       title: "Enregistrer les seuils ?",
-      description: "Les nouveaux seuils seront appliqués immédiatement au tracker.",
+      description: "Les nouveaux seuils seront appliqués et envoyés au tracker.",
       tone: "warning",
       confirmLabel: "Enregistrer",
     });
-    if (ok) await notify({ title: "Seuils mis à jour", tone: "success" });
-  };
-  return (
-    <Card
-      title="Seuils d'alerte"
-      action={
-        <button onClick={onSave} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
-          Enregistrer
-        </button>
+    if (!ok) return;
+    const patch = {
+      thresholds: {
+        speedKmh: Number(speed) || 0,
+        shockG: Number(shock) || 0,
+        geofenceDelaySec: Number(geo) || 0,
+        lowBatteryPct: Number(batt) || 0,
+      },
+    };
+    await save(patch);
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: dev } = await supabase.from("devices").select("id").eq("owner_id", user!.id).limit(1).maybeSingle();
+      if (dev) {
+        await supabase.from("commands").insert({
+          device_id: dev.id,
+          kind: "config",
+          issued_by: user!.id,
+          payload: patch.thresholds as never,
+        });
       }
-    >
+    } catch { /* ignore */ }
+    await notify({ title: "Seuils enregistrés", tone: "success" });
+  };
+
+  const fields = [
+    { label: "Limite vitesse", value: speed, set: setSpeed, unit: "km/h" },
+    { label: "Sensibilité choc", value: shock, set: setShock, unit: "g" },
+    { label: "Délai sortie géozone", value: geo, set: setGeo, unit: "s" },
+    { label: "Seuil batterie faible", value: batt, set: setBatt, unit: "%" },
+  ];
+
+  return (
+    <Card title="Seuils d'alerte" action={
+      <button onClick={onSave} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+        Enregistrer
+      </button>
+    }>
       <div className="space-y-4">
-        {[
-          { label: "Limite vitesse", value: "90", unit: "km/h" },
-          { label: "Sensibilité choc", value: "2.5", unit: "g" },
-          { label: "Délai sortie géozone", value: "30", unit: "s" },
-          { label: "Seuil batterie faible", value: "20", unit: "%" },
-        ].map((f) => (
+        {fields.map((f) => (
           <div key={f.label} className="grid grid-cols-[1fr_auto] gap-3 items-center">
             <label className="text-sm">{f.label}</label>
             <div className="flex items-center gap-2">
               <input
-                defaultValue={f.value}
-                className="w-20 h-9 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm mono text-right outline-none"
+                value={f.value}
+                onChange={(e) => f.set(e.target.value)}
+                className="w-20 h-9 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm mono text-right outline-none focus:border-[var(--accent-primary)]"
               />
               <span className="text-xs text-[var(--text-secondary)] mono w-10">{f.unit}</span>
             </div>
@@ -166,8 +274,11 @@ function ThresholdsSection() {
   );
 }
 
-function AntiTheftSection() {
+function AntiTheftSection({ settings, save }: SectionProps) {
+  const at = settings.antitheft ?? {};
   const [pin, setPin] = useState(["", "", "", ""]);
+  const hasPin = !!at.pinHash;
+
   const onSavePin = async () => {
     if (pin.some((d) => d === "")) {
       await notify({ title: "PIN incomplet", description: "Entrez les 4 chiffres.", tone: "warning" });
@@ -175,33 +286,37 @@ function AntiTheftSection() {
     }
     const ok = await confirm({
       title: "Définir ce nouveau PIN ?",
-      description: "Ce code sera requis pour les commandes moteur et la désactivation du suivi.",
+      description: "Ce code sera requis pour les commandes moteur.",
       tone: "danger",
       confirmLabel: "Définir",
     });
-    if (ok) {
-      await notify({ title: "PIN enregistré", tone: "success" });
-      setPin(["", "", "", ""]);
-    }
+    if (!ok) return;
+    const pinHash = await sha256(pin.join(""));
+    await save({ antitheft: { ...at, pinHash } });
+    setPin(["", "", "", ""]);
+    await notify({ title: "PIN enregistré", tone: "success" });
   };
+
+  const onToggle = async (key: "autolockMinIdle" | "stealthLed" | "tamperDetect", v: boolean) => {
+    await save({ antitheft: { ...at, [key]: v } });
+  };
+
   return (
     <>
-      <Card
-        title="Code PIN à 4 chiffres"
-        action={
-          <button onClick={onSavePin} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
-            Définir
-          </button>
-        }
-      >
+      <Card title={hasPin ? "Changer le code PIN" : "Définir un code PIN à 4 chiffres"} action={
+        <button onClick={onSavePin} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+          {hasPin ? "Mettre à jour" : "Définir"}
+        </button>
+      }>
         <p className="text-xs text-[var(--text-secondary)] mb-3">
-          Requis pour les commandes moteur et la désactivation du suivi.
+          {hasPin ? "Un PIN est déjà configuré. Saisissez-en un nouveau pour le remplacer." : "Requis pour les commandes moteur et la désactivation du suivi."}
         </p>
         <div className="flex gap-2">
           {pin.map((v, i) => (
             <input
               key={i}
               type="password"
+              inputMode="numeric"
               maxLength={1}
               value={v}
               onChange={(e) => {
@@ -220,34 +335,50 @@ function AntiTheftSection() {
         </div>
       </Card>
       <Card title="Verrouillage auto">
-        <Toggle label="Verrouiller après 10 min moteur coupé" defaultChecked />
-        <Toggle label="Mode furtif (LED off)" />
-        <Toggle label="Détection sabotage" defaultChecked />
+        <LabeledToggle
+          label="Verrouiller après 10 min moteur coupé"
+          checked={at.autolockMinIdle ?? true}
+          onChange={(v) => onToggle("autolockMinIdle", v)}
+        />
+        <LabeledToggle
+          label="Mode furtif (LED off)"
+          checked={at.stealthLed ?? false}
+          onChange={(v) => onToggle("stealthLed", v)}
+        />
+        <LabeledToggle
+          label="Détection sabotage"
+          checked={at.tamperDetect ?? true}
+          onChange={(v) => onToggle("tamperDetect", v)}
+        />
       </Card>
     </>
   );
 }
 
-function DeviceSection() {
+function DeviceSection({ settings, save }: SectionProps) {
+  const net = settings.network ?? {};
   const [device, setDevice] = useState<{ id: string; name: string; pairing_code: string | null } | null>(null);
   const [hmacSecret, setHmacSecret] = useState<string>("");
   const [keyRotatedAt, setKeyRotatedAt] = useState<string | null>(null);
   const [ingestUrl, setIngestUrl] = useState("/api/public/ingest");
-  const [apiUrl, setApiUrl] = useState("https://api.mototrack.bf/ingest");
-  const [apn, setApn] = useState("internet.orange.bf");
-  const [wifiSsid, setWifiSsid] = useState("MotoTrack-Home");
+  const [apiUrl, setApiUrl] = useState(net.apiUrl || "");
+  const [apn, setApn] = useState(net.apn || "internet.orange.bf");
+  const [wifiSsid, setWifiSsid] = useState(net.wifiSsid || "");
   const [wifiPwd, setWifiPwd] = useState("");
 
-  useState(() => {
+  useEffect(() => {
     (async () => {
       const { ensureMyDevice } = await import("@/lib/devices.functions");
       const res = await ensureMyDevice();
       setDevice(res.device);
       setHmacSecret(res.hmacSecret ?? "");
       setKeyRotatedAt(res.keyRotatedAt);
-      setIngestUrl(`${window.location.origin}${res.ingestUrl}`);
+      const url = `${window.location.origin}${res.ingestUrl}`;
+      setIngestUrl(url);
+      if (!apiUrl) setApiUrl(url);
     })();
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const copy = async (label: string, value: string) => {
     try {
@@ -258,8 +389,22 @@ function DeviceSection() {
     }
   };
 
+  const sendCommand = async (kind: string, payload?: Record<string, unknown>) => {
+    if (!device) return null;
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { error } = await supabase.from("commands").insert({
+      device_id: device.id, kind, issued_by: user.id, payload: (payload ?? null) as never,
+    });
+    if (error) {
+      await notify({ title: "Erreur", description: error.message, tone: "danger" });
+      return null;
+    }
+    return true;
+  };
+
   const onReboot = async () => {
-    if (!device) return;
     const ok = await confirm({
       title: "Redémarrer le module ESP32-S3 ?",
       description: "Le tracker exécutera la commande à sa prochaine connexion 4G.",
@@ -267,18 +412,14 @@ function DeviceSection() {
       confirmLabel: "Redémarrer",
     });
     if (!ok) return;
-    const { supabase } = await import("@/integrations/supabase/client");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await supabase.from("commands").insert({ device_id: device.id, kind: "reboot", issued_by: user.id });
-    await notify({ title: "Reboot programmé", tone: "success" });
+    if (await sendCommand("reboot")) await notify({ title: "Reboot programmé", tone: "success" });
   };
 
   const onPair = async () => {
     if (!device?.pairing_code) return;
     await notify({
       title: "Code de jumelage",
-      description: `Saisissez « ${device.pairing_code} » dans le firmware ESP32-S3 puis flashez avec le device-id et la clé HMAC.`,
+      description: `Saisissez « ${device.pairing_code} » dans le firmware ESP32-S3.`,
       tone: "info",
     });
   };
@@ -287,7 +428,7 @@ function DeviceSection() {
     if (!device) return;
     const ok = await confirm({
       title: "Générer une nouvelle clé HMAC ?",
-      description: "L'ancienne clé sera invalidée immédiatement. Vous devrez re-flasher le firmware avec la nouvelle clé.",
+      description: "L'ancienne clé sera invalidée. Re-flashez le firmware.",
       tone: "danger",
       confirmLabel: "Régénérer",
     });
@@ -306,7 +447,11 @@ function DeviceSection() {
       tone: "warning",
       confirmLabel: "Envoyer",
     });
-    if (ok) await notify({ title: "Configuration envoyée", description: "Le module redémarre pour appliquer.", tone: "success" });
+    if (!ok) return;
+    await save({ network: { ...net, apiUrl, apn } });
+    if (await sendCommand("config", { apiUrl, apn })) {
+      await notify({ title: "Configuration envoyée", tone: "success" });
+    }
   };
 
   const onSaveWifi = async () => {
@@ -316,43 +461,44 @@ function DeviceSection() {
     }
     const ok = await confirm({
       title: "Provisionner ce Wi-Fi ?",
-      description: `SSID: ${wifiSsid}. Le module basculera en Wi-Fi quand disponible (économie de data GSM).`,
+      description: `SSID: ${wifiSsid}. Le module basculera en Wi-Fi quand disponible.`,
       tone: "info",
       confirmLabel: "Provisionner",
     });
-    if (ok) await notify({ title: "Identifiants Wi-Fi envoyés", tone: "success" });
+    if (!ok) return;
+    await save({ network: { ...net, wifiSsid, wifiPwdSaved: !!wifiPwd } });
+    if (await sendCommand("wifi", { ssid: wifiSsid, password: wifiPwd })) {
+      setWifiPwd("");
+      await notify({ title: "Identifiants Wi-Fi envoyés", tone: "success" });
+    }
   };
 
   const onOTA = async () => {
     const ok = await confirm({
       title: "Lancer la mise à jour OTA ?",
-      description: "Le firmware v1.5.0 sera téléchargé puis flashé. ~3 min hors-ligne.",
+      description: "Le firmware sera téléchargé puis flashé. ~3 min hors-ligne.",
       tone: "warning",
       confirmLabel: "Mettre à jour",
     });
-    if (ok) await notify({ title: "OTA initié", description: "Suivez la progression dans le journal du tracker.", tone: "success" });
+    if (!ok) return;
+    if (await sendCommand("ota", { version: "latest" })) {
+      await notify({ title: "OTA initié", tone: "success" });
+    }
   };
 
   const onPing = async () => {
-    if (!device) return;
-    const { supabase } = await import("@/integrations/supabase/client");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await supabase.from("commands").insert({ device_id: device.id, kind: "ping", issued_by: user.id });
-    if (error) await notify({ title: "Erreur", description: error.message, tone: "danger" });
-    else await notify({ title: "Ping mis en file", description: "Le tracker répondra à sa prochaine connexion 4G.", tone: "success" });
+    if (await sendCommand("ping")) {
+      await notify({ title: "Ping mis en file", description: "Le tracker répondra à sa prochaine connexion.", tone: "success" });
+    }
   };
 
   return (
     <>
-      <Card
-        title="État du module"
-        action={
-          <span className={`text-[10px] mono px-2 py-0.5 rounded ${device ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]" : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"}`}>
-            {device ? "COUPLÉ" : "EN ATTENTE"}
-          </span>
-        }
-      >
+      <Card title="État du module" action={
+        <span className={`text-[10px] mono px-2 py-0.5 rounded ${device ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]" : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"}`}>
+          {device ? "COUPLÉ" : "EN ATTENTE"}
+        </span>
+      }>
         <div className="space-y-2 text-xs">
           <Row k="Device ID" v={device?.id ?? "—"} />
           <Row k="Nom" v={device?.name ?? "—"} />
@@ -361,18 +507,17 @@ function DeviceSection() {
         </div>
         <div className="flex gap-2 mt-4">
           <button onClick={onPing} className="flex-1 h-9 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] flex items-center justify-center gap-1.5">
-            <Radio className="size-3.5" /> Tester (envoie ping)
+            <Radio className="size-3.5" /> Ping
           </button>
           <button onClick={onPair} className="flex-1 h-9 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 flex items-center justify-center gap-1.5">
-            <CheckCircle2 className="size-3.5" /> Voir code d'appairage
+            <CheckCircle2 className="size-3.5" /> Code d'appairage
           </button>
         </div>
       </Card>
 
       <Card title="Identifiants à flasher dans le firmware ESP32-S3">
         <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
-          Ces trois valeurs doivent être compilées dans le firmware. Le tracker les utilise pour
-          signer chaque trame POST sur <code className="mono text-[var(--accent-cyan)]">/api/public/ingest</code> via HMAC-SHA256.
+          Ces trois valeurs doivent être compilées dans le firmware. Le tracker signe chaque trame POST sur <code className="mono text-[var(--accent-cyan)]">/api/public/ingest</code> via HMAC-SHA256.
         </p>
         <div className="space-y-2">
           <CodeRow label="DEVICE_ID" value={device?.id ?? ""} onCopy={copy} />
@@ -381,19 +526,16 @@ function DeviceSection() {
         </div>
         {device?.pairing_code && (
           <div className="mt-3 text-[11px] text-[var(--text-secondary)]">
-            Code de jumelage (1ère mise en service) : <span className="mono text-[var(--accent-primary)] font-bold">{device.pairing_code}</span>
+            Code de jumelage : <span className="mono text-[var(--accent-primary)] font-bold">{device.pairing_code}</span>
           </div>
         )}
       </Card>
 
-      <Card
-        title="Endpoint backend & APN"
-        action={
-          <button onClick={onSaveEndpoint} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
-            Envoyer
-          </button>
-        }
-      >
+      <Card title="Endpoint backend & APN" action={
+        <button onClick={onSaveEndpoint} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+          Envoyer
+        </button>
+      }>
         <div className="space-y-3">
           <div>
             <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">URL d'ingestion HTTPS</label>
@@ -414,14 +556,11 @@ function DeviceSection() {
         </div>
       </Card>
 
-      <Card
-        title="Wi-Fi de secours"
-        action={
-          <button onClick={onSaveWifi} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 flex items-center gap-1.5">
-            <Wifi className="size-3.5" /> Provisionner
-          </button>
-        }
-      >
+      <Card title="Wi-Fi de secours" action={
+        <button onClick={onSaveWifi} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 flex items-center gap-1.5">
+          <Wifi className="size-3.5" /> Provisionner
+        </button>
+      }>
         <p className="text-xs text-[var(--text-secondary)] mb-3">
           Quand le tracker est à portée, il bascule en Wi-Fi pour économiser le forfait data GSM.
         </p>
@@ -436,101 +575,124 @@ function DeviceSection() {
             value={wifiPwd}
             onChange={(e) => setWifiPwd(e.target.value)}
             type="password"
-            placeholder="Mot de passe"
+            placeholder={net.wifiPwdSaved ? "•••••• (déjà enregistré)" : "Mot de passe"}
             className="h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)]"
           />
         </div>
       </Card>
 
-      <Card
-        title="Clé HMAC (signature des trames)"
-        action={
-          <button onClick={onRotateHmac} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] flex items-center gap-1.5">
-            <RefreshCw className="size-3.5" /> Régénérer
-          </button>
-        }
-      >
+      <Card title="Clé HMAC (signature des trames)" action={
+        <button onClick={onRotateHmac} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] flex items-center gap-1.5">
+          <RefreshCw className="size-3.5" /> Régénérer
+        </button>
+      }>
         <p className="text-xs text-[var(--text-secondary)] mb-3">
-          Cette clé authentifie chaque trame GPS/télémétrie envoyée par l'ESP32-S3. À flasher dans le firmware.
+          Cette clé authentifie chaque trame GPS/télémétrie envoyée par l'ESP32-S3.
         </p>
         <div className="flex items-center gap-2 p-3 rounded-md bg-[var(--bg-elevated)]">
-          <code className="flex-1 text-[11px] mono break-all text-[var(--accent-cyan)]">{hmacSecret}</code>
+          <code className="flex-1 text-[11px] mono break-all text-[var(--accent-cyan)]">{hmacSecret || "—"}</code>
           <button onClick={() => copy("Clé HMAC", hmacSecret)} className="size-8 grid place-items-center rounded-md hover:bg-[var(--bg-surface)] shrink-0">
             <Copy className="size-3.5" />
           </button>
         </div>
       </Card>
 
-      <Card
-        title="Maintenance & OTA"
-        action={
-          <div className="flex gap-2">
-            <button onClick={onOTA} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-cyan)]/15 text-[var(--accent-cyan)] font-semibold hover:bg-[var(--accent-cyan)]/25 flex items-center gap-1.5">
-              <Download className="size-3.5" /> OTA v1.5.0
-            </button>
-            <button onClick={onReboot} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/15 text-[var(--accent-red)] font-semibold hover:bg-[var(--accent-red)]/25">
-              Redémarrer
-            </button>
-          </div>
-        }
-      >
+      <Card title="Maintenance & OTA" action={
+        <div className="flex gap-2">
+          <button onClick={onOTA} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-cyan)]/15 text-[var(--accent-cyan)] font-semibold hover:bg-[var(--accent-cyan)]/25 flex items-center gap-1.5">
+            <Download className="size-3.5" /> OTA
+          </button>
+          <button onClick={onReboot} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/15 text-[var(--accent-red)] font-semibold hover:bg-[var(--accent-red)]/25">
+            Redémarrer
+          </button>
+        </div>
+      }>
         <p className="text-xs text-[var(--text-secondary)]">
-          Forcer un redémarrage à distance ou installer la dernière version du firmware OTA via SIM7600G.
+          Redémarrage à distance ou mise à jour OTA via SIM7600G.
         </p>
       </Card>
     </>
   );
 }
 
-function AccountSection() {
+function AccountSection({ settings, save }: SectionProps) {
+  const p = settings.profile ?? {};
+  const navigate = useNavigate();
+  const [name, setName] = useState(p.name ?? "");
+  const [phone, setPhone] = useState(p.phone ?? "");
+  const [email, setEmail] = useState(p.email ?? "");
+
+  useEffect(() => {
+    (async () => {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && !email) setEmail(user.email ?? "");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onSave = async () => {
+    await save({ profile: { name, phone, email } });
+    await notify({ title: "Profil enregistré", tone: "success" });
+  };
+
   const onLogout = async () => {
     const ok = await confirm({
       title: "Se déconnecter ?",
-      description: "Vous devrez vous reconnecter pour suivre votre moto.",
+      description: "Vous devrez vous reconnecter pour suivre votre véhicule.",
       tone: "warning",
       confirmLabel: "Déconnecter",
     });
-    if (ok) await notify({ title: "Déconnecté", tone: "success" });
+    if (!ok) return;
+    await signOut();
+    await notify({ title: "Déconnecté", tone: "success" });
+    navigate({ to: "/auth/login", replace: true });
   };
+
   return (
     <>
-      <Card title="Profil">
+      <Card title="Profil" action={
+        <button onClick={onSave} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+          Enregistrer
+        </button>
+      }>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Nom" defaultValue="Ouédraogo Y." />
-            <Field label="Téléphone" defaultValue="+226 70 12 34 56" />
+            <Field label="Nom" value={name} onChange={setName} />
+            <Field label="Téléphone" value={phone} onChange={setPhone} />
           </div>
-          <Field label="Email" defaultValue="user@mototrack.bf" />
+          <Field label="Email" value={email} onChange={setEmail} />
         </div>
       </Card>
-      <Card
-        title="Session"
-        action={
-          <button onClick={onLogout} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--accent-red)]/15 hover:text-[var(--accent-red)]">
-            Se déconnecter
-          </button>
-        }
-      >
-        <p className="text-xs text-[var(--text-secondary)]">Session active depuis Ouagadougou · Chrome desktop.</p>
+      <Card title="Session" action={
+        <button onClick={onLogout} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--accent-red)]/15 hover:text-[var(--accent-red)] flex items-center gap-1.5">
+          <LogOut className="size-3.5" /> Se déconnecter
+        </button>
+      }>
+        <p className="text-xs text-[var(--text-secondary)]">AutoTrack — développé par YAGO Ibrahima Juste.</p>
       </Card>
     </>
   );
 }
 
-function Field({ label, defaultValue }: { label: string; defaultValue: string }) {
+function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div>
       <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">{label}</label>
-      <input defaultValue={defaultValue} className="mt-1 w-full h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)]" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)]"
+      />
     </div>
   );
 }
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex justify-between py-1.5 border-b border-[var(--border)] last:border-0">
-      <span className="text-[var(--text-secondary)]">{k}</span>
-      <span className="mono">{v}</span>
+    <div className="flex justify-between gap-3 py-1.5 border-b border-[var(--border)] last:border-0">
+      <span className="text-[var(--text-secondary)] shrink-0">{k}</span>
+      <span className="mono truncate text-right">{v}</span>
     </div>
   );
 }
@@ -554,24 +716,31 @@ function CodeRow({ label, value, onCopy, mask }: { label: string; value: string;
   );
 }
 
-function Toggle({ label, defaultChecked = false }: { label: string; defaultChecked?: boolean }) {
-  const [checked, setChecked] = useState(defaultChecked);
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      onClick={() => setChecked((c) => !c)}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)] border border-[var(--border)]"}`}
+    >
+      <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow-md transition-transform duration-200 ${checked ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
+
+function LabeledToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
       className="w-full flex items-center justify-between gap-3 py-2.5 px-1 rounded-md hover:bg-[var(--bg-elevated)]/40 transition-colors cursor-pointer text-left"
     >
       <span className="text-xs flex-1">{label}</span>
-      <span
-        className={`relative inline-flex shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)] border border-[var(--border)]"}`}
-      >
-        <span
-          className={`absolute top-0.5 size-5 rounded-full bg-white shadow-md transition-transform duration-200 ${checked ? "translate-x-[22px]" : "translate-x-0.5"}`}
-        />
-      </span>
+      <ToggleSwitch checked={checked} onChange={onChange} />
     </button>
   );
 }

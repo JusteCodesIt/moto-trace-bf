@@ -95,7 +95,7 @@ function TripDetail() {
   };
   const onExport = () => {
     downloadGPX(trip);
-    toast.success(`mototrack-${trip.id}.gpx téléchargé`);
+    toast.success(`autotrack-${trip.id}.gpx téléchargé`);
   };
 
   return (

@@ -100,7 +100,7 @@ export function toGPX(trip: Trip, path: TripPoint[]): string {
     })
     .join("\n      ");
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="MotoTrack BF" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="AutoTrack" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
     <name>Trajet ${trip.id}</name>
     <time>${startDate}</time>
@@ -120,7 +120,7 @@ export function downloadGPX(trip: Trip) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `mototrack-${trip.id}.gpx`;
+  a.download = `autotrack-${trip.id}.gpx`;
   document.body.appendChild(a);
   a.click();
   a.remove();

@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import illusAlerts from "@/assets/illus-alerts.png";
 
 export const Route = createFileRoute("/alerts")({
-  head: () => ({ meta: [{ title: "Alertes — MotoTrack BF" }] }),
+  head: () => ({ meta: [{ title: "Alertes — AutoTrack" }] }),
   component: AlertsPage,
 });
 

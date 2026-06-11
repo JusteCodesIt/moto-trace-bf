@@ -97,7 +97,7 @@ export function Dashboard() {
       <div className="absolute top-3 left-3 right-3 md:left-4 md:right-4 z-20 flex items-center justify-between gap-3 pointer-events-none">
         <div className="glass px-3 h-11 flex items-center gap-3 pointer-events-auto">
           <SocketDot status={socketStatus} />
-          <span className="text-sm font-semibold tracking-tight hidden sm:inline">MotoTrack BF</span>
+          <span className="text-sm font-semibold tracking-tight hidden sm:inline">AutoTrack</span>
         </div>
 
         <div className="glass px-4 h-11 flex items-center gap-3 pointer-events-auto">

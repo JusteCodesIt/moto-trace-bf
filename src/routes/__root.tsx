@@ -60,7 +60,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#07080F" },
-      { title: "MotoTrack BF — GPS tracker moto" },
+      { title: "AutoTrack — GPS tracker moto" },
       { name: "description", content: "Suivi GPS temps réel pour motos au Burkina Faso. Trajets, alertes, anti-vol." },
     ],
     links: [

@@ -45,7 +45,7 @@ export function Sidebar() {
         </div>
         {expanded && (
           <div className="whitespace-nowrap">
-            <div className="text-sm font-semibold tracking-tight">MotoTrack BF</div>
+            <div className="text-sm font-semibold tracking-tight">AutoTrack</div>
             <div className="text-[10px] text-[var(--text-secondary)] mono">v2.0.0</div>
           </div>
         )}

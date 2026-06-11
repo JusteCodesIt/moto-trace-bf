@@ -11,7 +11,7 @@ import illusTracking from "@/assets/illus-tracking.png";
 
 export const Route = createFileRoute("/trips")({
   head: () => ({
-    meta: [{ title: "Trajets — MotoTrack BF" }],
+    meta: [{ title: "Trajets — AutoTrack" }],
   }),
   component: TripsPage,
 });

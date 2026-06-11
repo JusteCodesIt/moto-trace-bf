@@ -7,7 +7,7 @@ const ThemeCtx = createContext<{ theme: Theme; toggle: () => void; setTheme: (t:
   setTheme: () => {},
 });
 
-const STORAGE_KEY = "mototrack-theme";
+const STORAGE_KEY = "autotrack-theme";
 
 function applyTheme(theme: Theme) {
   if (typeof document === "undefined") return;

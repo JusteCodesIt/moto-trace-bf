@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth/login")({
-  head: () => ({ meta: [{ title: "Connexion — MotoTrack BF" }] }),
+  head: () => ({ meta: [{ title: "Connexion — AutoTrack" }] }),
   component: LoginPage,
 });
 
@@ -71,7 +71,7 @@ function LoginPage() {
         <div className="relative">
           <div className="flex items-center gap-2">
             <div className="size-8 rounded-md bg-[var(--accent-primary)] grid place-items-center text-xs font-bold text-[var(--accent-milk)]">MT</div>
-            <span className="font-semibold tracking-tight">MotoTrack BF</span>
+            <span className="font-semibold tracking-tight">AutoTrack</span>
           </div>
         </div>
         <div className="relative space-y-3">
