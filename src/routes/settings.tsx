@@ -395,7 +395,7 @@ function DeviceSection({ settings, save }: SectionProps) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const { error } = await supabase.from("commands").insert({
-      device_id: device.id, kind, issued_by: user.id, payload: payload ?? null,
+      device_id: device.id, kind, issued_by: user.id, payload: (payload ?? null) as never,
     });
     if (error) {
       await notify({ title: "Erreur", description: error.message, tone: "danger" });

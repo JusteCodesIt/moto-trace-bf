@@ -70,7 +70,7 @@ export const updateMySettings = createServerFn({ method: "POST" })
     }
     const { error } = await supabase
       .from("user_settings")
-      .upsert({ user_id: userId, data: next }, { onConflict: "user_id" });
+      .upsert({ user_id: userId, data: next as never }, { onConflict: "user_id" });
     if (error) throw new Error(error.message);
     return next as UserSettings;
   });
