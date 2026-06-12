@@ -41,7 +41,7 @@ export function Sidebar() {
     >
       <div className="h-16 flex items-center px-[18px] gap-3 border-b border-[var(--border)] shrink-0">
         <div className="size-6 shrink-0 rounded-md bg-[var(--accent-primary)] grid place-items-center text-[10px] font-bold text-[var(--accent-milk)]">
-          MT
+          AT
         </div>
         {expanded && (
           <div className="whitespace-nowrap">

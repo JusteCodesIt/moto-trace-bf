@@ -70,7 +70,7 @@ function LoginPage() {
           style={{ background: "radial-gradient(circle at 70% 30%, rgba(255,230,0,0.25), transparent 50%), radial-gradient(circle at 20% 80%, rgba(34,211,255,0.25), transparent 50%)" }} />
         <div className="relative">
           <div className="flex items-center gap-2">
-            <div className="size-8 rounded-md bg-[var(--accent-primary)] grid place-items-center text-xs font-bold text-[var(--accent-milk)]">MT</div>
+            <div className="size-8 rounded-md bg-[var(--accent-primary)] grid place-items-center text-xs font-bold text-[var(--accent-milk)]">AT</div>
             <span className="font-semibold tracking-tight">AutoTrack</span>
           </div>
         </div>
