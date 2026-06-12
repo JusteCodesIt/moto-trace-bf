@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "./store";
 import { startRealtime, stopRealtime } from "./realtime";
 import { ensureMyDevice } from "./devices.functions";
+import { InlinePreloader } from "@/components/SplashScreen";
+
 
 type AuthState = "loading" | "anon" | "authed";
 
@@ -57,12 +59,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [state, location.pathname, navigate]);
 
   if (state === "loading") {
-    return (
-      <div className="h-screen w-screen grid place-items-center bg-[var(--bg-base)] text-[var(--text-secondary)]">
-        <div className="text-xs mono">Connexion…</div>
-      </div>
-    );
+    return <InlinePreloader />;
   }
+
   return <>{children}</>;
 }
 
