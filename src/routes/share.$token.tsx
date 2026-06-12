@@ -27,7 +27,7 @@ function SharePage() {
       <div className="absolute top-4 left-4 right-4 z-20 flex items-center gap-3">
         <div className="glass-strong px-4 h-12 flex items-center gap-3 flex-1 max-w-md">
           <div className="size-8 rounded-md bg-[var(--accent-primary)] grid place-items-center text-[10px] font-bold text-[var(--bg-base)]">
-            MT
+            AT
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold truncate">AutoTrack #BF-001</div>
