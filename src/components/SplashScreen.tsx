@@ -26,13 +26,11 @@ export function SplashScreen() {
     return cleanup;
   }, []);
 
-  // Route-change preloader
+  // Route-change preloader — fixed 2s display
   useEffect(() => {
     if (mode === "initial") return;
-    if (pending) {
-      start("route", 900);
-    } else if (mode === "route") {
-      finish();
+    if (pending && mode !== "route") {
+      start("route", 2000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending]);
@@ -51,17 +49,17 @@ export function SplashScreen() {
     setProgress(0);
     const startTs = performance.now();
     const tick = (t: number) => {
-      const p = Math.min(nextMode === "route" ? 0.92 : 1, (t - startTs) / duration);
+      const p = Math.min(1, (t - startTs) / duration);
       setProgress(p);
-      if (nextMode === "initial" && p >= 1) {
+      if (p >= 1) {
         finish();
         return;
       }
-      if (nextMode === "route" && p >= 0.92) return;
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
   }
+
 
   function finish() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
