@@ -143,3 +143,71 @@ export function SplashScreen() {
     </div>
   );
 }
+
+export function InlinePreloader() {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    const start = performance.now();
+    const duration = 2000;
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / duration);
+      setProgress(p);
+      if (p < 1) raf = requestAnimationFrame(tick);
+      else {
+        // Loop the bar while waiting
+        setProgress(0);
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden"
+      style={{ background: "#06070d" }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, rgba(225,29,72,0.18) 0%, rgba(6,7,13,0) 55%)",
+        }}
+      />
+      <div className="relative z-10 flex flex-col items-center gap-6 px-6">
+        <img
+          src={logoAsset.url}
+          alt="AutoTrack"
+          className="w-[260px] md:w-[320px] h-auto"
+          style={{
+            filter: "drop-shadow(0 8px 32px rgba(225,29,72,0.45))",
+            animation: "splash-logo-in 700ms cubic-bezier(0.22,1,0.36,1) both",
+          }}
+        />
+        <div
+          className="relative h-[3px] overflow-hidden rounded-full"
+          style={{ width: 260, background: "rgba(255,255,255,0.08)" }}
+        >
+          <div
+            className="absolute inset-y-0 left-0 rounded-full"
+            style={{
+              width: `${progress * 100}%`,
+              background: "linear-gradient(90deg, #E11D48, #FFFFFF)",
+              boxShadow: "0 0 12px rgba(225,29,72,0.6)",
+              transition: "width 120ms linear",
+            }}
+          />
+        </div>
+      </div>
+      <style>{`
+        @keyframes splash-logo-in {
+          0% { opacity: 0; transform: translateY(8px) scale(0.96); filter: blur(6px); }
+          100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
