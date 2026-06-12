@@ -97,6 +97,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <SplashScreen />
         <Outlet />
         <Toaster
           position="top-right"
