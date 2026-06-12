@@ -320,7 +320,7 @@ export function Dashboard() {
               En attente du tracker
             </div>
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-              Aucune trame reçue du tracker ESP32-S3 pour le moment. La carte affichera la position dès que le dispositif enverra sa première trame HTTPS signée.
+              Aucune trame reçue du tracker pour le moment. La carte affichera la position dès que le dispositif enverra sa première trame HTTPS signée.
               Configurez le code de jumelage et la clé HMAC depuis <a className="text-[var(--accent-cyan)] hover:underline" href="/settings">Paramètres</a>.
             </p>
           </div>
