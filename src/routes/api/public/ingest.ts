@@ -13,20 +13,25 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * Body (JSON): see Schema below. All numeric fields optional except lat/lng.
  */
 const Schema = z.object({
-  recorded_at: z.string().datetime().optional(),
+  recorded_at: z.string().datetime({ offset: true }).optional(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  speed_kmh: z.number().min(0).max(400).optional(),
-  heading: z.number().min(0).max(360).optional(),
-  altitude: z.number().min(-500).max(9000).optional(),
-  satellites: z.number().int().min(0).max(64).optional(),
-  hdop: z.number().min(0).max(99).optional(),
-  battery_main: z.number().min(0).max(100).optional(),
-  battery_backup: z.number().min(0).max(100).optional(),
-  gsm_bars: z.number().int().min(0).max(5).optional(),
-  gsm_carrier: z.string().max(40).optional(),
-  engine_on: z.boolean().optional(),
-  accel: z.object({ x: z.number(), y: z.number(), z: z.number() }).optional(),
+  speed_kmh: z.number().min(0).max(400).nullish(),
+  heading: z.number().min(0).max(360).nullish(),
+  altitude: z.number().min(-500).max(9000).nullish(),
+  satellites: z.number().int().min(0).max(64).nullish(),
+  hdop: z.number().min(0).max(99).nullish(),
+  battery_main: z.number().min(0).max(100).nullish(),
+  battery_backup: z.number().min(0).max(100).nullish(),
+  gsm_bars: z.number().int().min(0).max(5).nullish(),
+  gsm_carrier: z.string().max(40).nullish(),
+  engine_on: z.boolean().nullish(),
+  gps_source: z.string().max(40).nullish(),
+  // Firmware sends flat accel_x/y/z (nullable). Legacy nested `accel` also accepted.
+  accel_x: z.number().nullish(),
+  accel_y: z.number().nullish(),
+  accel_z: z.number().nullish(),
+  accel: z.object({ x: z.number(), y: z.number(), z: z.number() }).nullish(),
   events: z.array(z.object({
     kind: z.string().max(40),
     severity: z.enum(["critical", "warning", "info"]),
@@ -34,6 +39,7 @@ const Schema = z.object({
     message: z.string().max(400).optional(),
   })).max(10).optional(),
 });
+
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -73,18 +79,24 @@ export const Route = createFileRoute("/api/public/ingest")({
 
         const recordedAt = parsed.recorded_at ?? new Date().toISOString();
 
+        const ax = parsed.accel_x ?? parsed.accel?.x ?? null;
+        const ay = parsed.accel_y ?? parsed.accel?.y ?? null;
+        const az = parsed.accel_z ?? parsed.accel?.z ?? null;
+
         const { error: tErr } = await supabaseAdmin.from("telemetry").insert({
           device_id: deviceId,
           recorded_at: recordedAt,
           lat: parsed.lat, lng: parsed.lng,
-          speed_kmh: parsed.speed_kmh, heading: parsed.heading,
-          altitude: parsed.altitude, satellites: parsed.satellites, hdop: parsed.hdop,
-          battery_main: parsed.battery_main, battery_backup: parsed.battery_backup,
-          gsm_bars: parsed.gsm_bars, gsm_carrier: parsed.gsm_carrier,
-          engine_on: parsed.engine_on,
-          accel_x: parsed.accel?.x, accel_y: parsed.accel?.y, accel_z: parsed.accel?.z,
+          speed_kmh: parsed.speed_kmh ?? null, heading: parsed.heading ?? null,
+          altitude: parsed.altitude ?? null, satellites: parsed.satellites ?? null, hdop: parsed.hdop ?? null,
+          battery_main: parsed.battery_main ?? null, battery_backup: parsed.battery_backup ?? null,
+          gsm_bars: parsed.gsm_bars ?? null, gsm_carrier: parsed.gsm_carrier ?? null,
+          engine_on: parsed.engine_on ?? null,
+          gps_source: parsed.gps_source ?? null,
+          accel_x: ax, accel_y: ay, accel_z: az,
           raw: parsed as any,
         });
+
         if (tErr) return json({ error: tErr.message }, 500);
 
         // Optional events → alerts
@@ -125,7 +137,13 @@ export const Route = createFileRoute("/api/public/ingest")({
             .update({ status: "sent", sent_at: new Date().toISOString() })
             .in("id", pending.map((c) => c.id));
         }
-        return json({ ok: true, commands: pending ?? [] });
+        // Firmware expects `type` field (mapped from `kind`) and a string payload.
+        const commands = (pending ?? []).map((c: any) => ({
+          id: c.id,
+          type: c.kind,
+          payload: c.payload == null ? "" : (typeof c.payload === "string" ? c.payload : JSON.stringify(c.payload)),
+        }));
+        return json({ ok: true, commands });
       },
     },
   },

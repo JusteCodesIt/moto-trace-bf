@@ -233,6 +233,7 @@ export type Database = {
           battery_main: number | null
           device_id: string
           engine_on: boolean | null
+          gps_source: string | null
           gsm_bars: number | null
           gsm_carrier: string | null
           hdop: number | null
@@ -254,6 +255,7 @@ export type Database = {
           battery_main?: number | null
           device_id: string
           engine_on?: boolean | null
+          gps_source?: string | null
           gsm_bars?: number | null
           gsm_carrier?: string | null
           hdop?: number | null
@@ -275,6 +277,7 @@ export type Database = {
           battery_main?: number | null
           device_id?: string
           engine_on?: boolean | null
+          gps_source?: string | null
           gsm_bars?: number | null
           gsm_carrier?: string | null
           hdop?: number | null
