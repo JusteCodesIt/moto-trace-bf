@@ -197,7 +197,18 @@ export function MapCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [style]);
 
+  // theme — live restyle of the streets map
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    if (style === "satellite") return;
+    mapRef.current.setOptions({
+      styles: theme === "dark" ? DARK_STYLE : null,
+      backgroundColor: theme === "dark" ? "#07080F" : "#e8eef7",
+    });
+  }, [theme, style, ready]);
+
   // vehicle position
+
   useEffect(() => {
     if (!ready) return;
     const pos = { lat: center[0], lng: center[1] };
