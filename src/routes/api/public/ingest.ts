@@ -79,18 +79,24 @@ export const Route = createFileRoute("/api/public/ingest")({
 
         const recordedAt = parsed.recorded_at ?? new Date().toISOString();
 
+        const ax = parsed.accel_x ?? parsed.accel?.x ?? null;
+        const ay = parsed.accel_y ?? parsed.accel?.y ?? null;
+        const az = parsed.accel_z ?? parsed.accel?.z ?? null;
+
         const { error: tErr } = await supabaseAdmin.from("telemetry").insert({
           device_id: deviceId,
           recorded_at: recordedAt,
           lat: parsed.lat, lng: parsed.lng,
-          speed_kmh: parsed.speed_kmh, heading: parsed.heading,
-          altitude: parsed.altitude, satellites: parsed.satellites, hdop: parsed.hdop,
-          battery_main: parsed.battery_main, battery_backup: parsed.battery_backup,
-          gsm_bars: parsed.gsm_bars, gsm_carrier: parsed.gsm_carrier,
-          engine_on: parsed.engine_on,
-          accel_x: parsed.accel?.x, accel_y: parsed.accel?.y, accel_z: parsed.accel?.z,
+          speed_kmh: parsed.speed_kmh ?? null, heading: parsed.heading ?? null,
+          altitude: parsed.altitude ?? null, satellites: parsed.satellites ?? null, hdop: parsed.hdop ?? null,
+          battery_main: parsed.battery_main ?? null, battery_backup: parsed.battery_backup ?? null,
+          gsm_bars: parsed.gsm_bars ?? null, gsm_carrier: parsed.gsm_carrier ?? null,
+          engine_on: parsed.engine_on ?? null,
+          gps_source: parsed.gps_source ?? null,
+          accel_x: ax, accel_y: ay, accel_z: az,
           raw: parsed as any,
         });
+
         if (tErr) return json({ error: tErr.message }, 500);
 
         // Optional events → alerts
