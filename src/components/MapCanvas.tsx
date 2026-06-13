@@ -132,6 +132,8 @@ export function MapCanvas({
   const fittedRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { theme } = useTheme();
+
 
   // init
   useEffect(() => {
