@@ -92,9 +92,8 @@ function pinSvg(color: string, label: string) {
   )}`;
 }
 
-const VEHICLE_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="rgba(0,212,255,0.18)"/><circle cx="22" cy="22" r="13" fill="#07080F" stroke="#00D4FF" stroke-width="1.5"/><svg x="10" y="10" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path d="M5 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm14 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" fill="#FF6B35"/><path d="M5 14h6l2-5h4l2 5"/><path d="M11 14l4-5"/></svg></svg>`,
-)}`;
+const VEHICLE_ICON = vehicleAsset.url;
+
 
 export function MapCanvas({
   center,
