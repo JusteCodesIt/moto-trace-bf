@@ -147,11 +147,11 @@ export function MapCanvas({
           center: { lat: center[0], lng: center[1] },
           zoom: 14,
           mapTypeId: style === "satellite" ? g.maps.MapTypeId.HYBRID : g.maps.MapTypeId.ROADMAP,
-          styles: style === "satellite" ? undefined : DARK_STYLE,
+          styles: style === "satellite" ? undefined : (theme === "dark" ? DARK_STYLE : undefined),
           disableDefaultUI: true,
           zoomControl: true,
           gestureHandling: "greedy",
-          backgroundColor: "#07080F",
+          backgroundColor: theme === "dark" ? "#07080F" : "#e8eef7",
           clickableIcons: false,
         });
         mapRef.current = map;
@@ -159,10 +159,11 @@ export function MapCanvas({
         markerRef.current = new g.maps.Marker({
           position: { lat: center[0], lng: center[1] },
           map,
-          icon: { url: VEHICLE_ICON, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) },
+          icon: { url: VEHICLE_ICON, scaledSize: new g.maps.Size(56, 32), anchor: new g.maps.Point(28, 16) },
           optimized: false,
           zIndex: 999,
         });
+
 
         fullPathRef.current = new g.maps.Polyline({ map, path: [], strokeColor: "#5a6378", strokeOpacity: 0.5, strokeWeight: 3 });
         trailRef.current = new g.maps.Polyline({ map, path: [], strokeColor: "#00D4FF", strokeOpacity: 0.9, strokeWeight: 4 });
