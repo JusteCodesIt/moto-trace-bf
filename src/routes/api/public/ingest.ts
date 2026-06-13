@@ -137,7 +137,13 @@ export const Route = createFileRoute("/api/public/ingest")({
             .update({ status: "sent", sent_at: new Date().toISOString() })
             .in("id", pending.map((c) => c.id));
         }
-        return json({ ok: true, commands: pending ?? [] });
+        // Firmware expects `type` field (mapped from `kind`) and a string payload.
+        const commands = (pending ?? []).map((c: any) => ({
+          id: c.id,
+          type: c.kind,
+          payload: c.payload == null ? "" : (typeof c.payload === "string" ? c.payload : JSON.stringify(c.payload)),
+        }));
+        return json({ ok: true, commands });
       },
     },
   },
