@@ -1,5 +1,8 @@
 /// <reference types="google.maps" />
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "@/lib/theme";
+import vehicleAsset from "@/assets/vehicle-jmc.png.asset.json";
+
 
 interface LatLng { lat: number; lng: number }
 
@@ -89,9 +92,8 @@ function pinSvg(color: string, label: string) {
   )}`;
 }
 
-const VEHICLE_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="rgba(0,212,255,0.18)"/><circle cx="22" cy="22" r="13" fill="#07080F" stroke="#00D4FF" stroke-width="1.5"/><svg x="10" y="10" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path d="M5 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm14 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" fill="#FF6B35"/><path d="M5 14h6l2-5h4l2 5"/><path d="M11 14l4-5"/></svg></svg>`,
-)}`;
+const VEHICLE_ICON = vehicleAsset.url;
+
 
 export function MapCanvas({
   center,
@@ -130,6 +132,8 @@ export function MapCanvas({
   const fittedRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { theme } = useTheme();
+
 
   // init
   useEffect(() => {
@@ -143,11 +147,11 @@ export function MapCanvas({
           center: { lat: center[0], lng: center[1] },
           zoom: 14,
           mapTypeId: style === "satellite" ? g.maps.MapTypeId.HYBRID : g.maps.MapTypeId.ROADMAP,
-          styles: style === "satellite" ? undefined : DARK_STYLE,
+          styles: style === "satellite" ? undefined : (theme === "dark" ? DARK_STYLE : undefined),
           disableDefaultUI: true,
           zoomControl: true,
           gestureHandling: "greedy",
-          backgroundColor: "#07080F",
+          backgroundColor: theme === "dark" ? "#07080F" : "#e8eef7",
           clickableIcons: false,
         });
         mapRef.current = map;
@@ -155,10 +159,11 @@ export function MapCanvas({
         markerRef.current = new g.maps.Marker({
           position: { lat: center[0], lng: center[1] },
           map,
-          icon: { url: VEHICLE_ICON, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) },
+          icon: { url: VEHICLE_ICON, scaledSize: new g.maps.Size(56, 32), anchor: new g.maps.Point(28, 16) },
           optimized: false,
           zIndex: 999,
         });
+
 
         fullPathRef.current = new g.maps.Polyline({ map, path: [], strokeColor: "#5a6378", strokeOpacity: 0.5, strokeWeight: 3 });
         trailRef.current = new g.maps.Polyline({ map, path: [], strokeColor: "#00D4FF", strokeOpacity: 0.9, strokeWeight: 4 });
@@ -192,7 +197,18 @@ export function MapCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [style]);
 
+  // theme — live restyle of the streets map
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    if (style === "satellite") return;
+    mapRef.current.setOptions({
+      styles: theme === "dark" ? DARK_STYLE : null,
+      backgroundColor: theme === "dark" ? "#07080F" : "#e8eef7",
+    });
+  }, [theme, style, ready]);
+
   // vehicle position
+
   useEffect(() => {
     if (!ready) return;
     const pos = { lat: center[0], lng: center[1] };
@@ -355,7 +371,7 @@ export function MapCanvas({
 
   return (
     <div className={className ?? "absolute inset-0"}>
-      <div ref={containerRef} className="absolute inset-0 bg-[#07080F]" />
+      <div ref={containerRef} className="absolute inset-0" style={{ background: theme === "dark" ? "#07080F" : "#e8eef7" }} />
       {error && (
         <div className="absolute bottom-3 left-3 z-30 glass px-3 py-2 text-[11px] text-[var(--accent-red,#FF3B30)]">
           Carte indisponible — {error}
