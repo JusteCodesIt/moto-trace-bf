@@ -1,5 +1,8 @@
 /// <reference types="google.maps" />
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "@/lib/theme";
+import vehicleAsset from "@/assets/vehicle-jmc.png.asset.json";
+
 
 interface LatLng { lat: number; lng: number }
 
