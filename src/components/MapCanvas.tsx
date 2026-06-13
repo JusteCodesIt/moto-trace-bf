@@ -371,7 +371,7 @@ export function MapCanvas({
 
   return (
     <div className={className ?? "absolute inset-0"}>
-      <div ref={containerRef} className="absolute inset-0 bg-[#07080F]" />
+      <div ref={containerRef} className="absolute inset-0" style={{ background: theme === "dark" ? "#07080F" : "#e8eef7" }} />
       {error && (
         <div className="absolute bottom-3 left-3 z-30 glass px-3 py-2 text-[11px] text-[var(--accent-red,#FF3B30)]">
           Carte indisponible — {error}
