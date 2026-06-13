@@ -13,20 +13,25 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * Body (JSON): see Schema below. All numeric fields optional except lat/lng.
  */
 const Schema = z.object({
-  recorded_at: z.string().datetime().optional(),
+  recorded_at: z.string().datetime({ offset: true }).optional(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  speed_kmh: z.number().min(0).max(400).optional(),
-  heading: z.number().min(0).max(360).optional(),
-  altitude: z.number().min(-500).max(9000).optional(),
-  satellites: z.number().int().min(0).max(64).optional(),
-  hdop: z.number().min(0).max(99).optional(),
-  battery_main: z.number().min(0).max(100).optional(),
-  battery_backup: z.number().min(0).max(100).optional(),
-  gsm_bars: z.number().int().min(0).max(5).optional(),
-  gsm_carrier: z.string().max(40).optional(),
-  engine_on: z.boolean().optional(),
-  accel: z.object({ x: z.number(), y: z.number(), z: z.number() }).optional(),
+  speed_kmh: z.number().min(0).max(400).nullish(),
+  heading: z.number().min(0).max(360).nullish(),
+  altitude: z.number().min(-500).max(9000).nullish(),
+  satellites: z.number().int().min(0).max(64).nullish(),
+  hdop: z.number().min(0).max(99).nullish(),
+  battery_main: z.number().min(0).max(100).nullish(),
+  battery_backup: z.number().min(0).max(100).nullish(),
+  gsm_bars: z.number().int().min(0).max(5).nullish(),
+  gsm_carrier: z.string().max(40).nullish(),
+  engine_on: z.boolean().nullish(),
+  gps_source: z.string().max(40).nullish(),
+  // Firmware sends flat accel_x/y/z (nullable). Legacy nested `accel` also accepted.
+  accel_x: z.number().nullish(),
+  accel_y: z.number().nullish(),
+  accel_z: z.number().nullish(),
+  accel: z.object({ x: z.number(), y: z.number(), z: z.number() }).nullish(),
   events: z.array(z.object({
     kind: z.string().max(40),
     severity: z.enum(["critical", "warning", "info"]),
@@ -34,6 +39,7 @@ const Schema = z.object({
     message: z.string().max(400).optional(),
   })).max(10).optional(),
 });
+
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
