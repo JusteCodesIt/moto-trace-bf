@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Pause, Play, Share2, SkipBack, SkipForward, Download } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Pause, Play, SkipBack, SkipForward, Download } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { AppShell } from "@/components/AppShell";
 import { MapCanvas } from "@/components/MapCanvas";
 import { useApp } from "@/lib/store";
 import { fmtDuration, bearingToCompass, speedColor } from "@/lib/format";
-import { buildTripPath, downloadGPX } from "@/lib/trip-path";
+import { getTripPath, downloadGPX, type TripPoint } from "@/lib/trip-path";
 
 export const Route = createFileRoute("/trips/$id")({
   component: TripDetail,
@@ -16,9 +16,23 @@ const SPEEDS = [1, 2, 4, 8] as const;
 
 function TripDetail() {
   const { id } = Route.useParams();
+  const device = useApp((s) => s.device);
   const trip = useApp((s) => s.trips.find((t) => t.id === id));
 
-  const path = useMemo(() => (trip ? buildTripPath(trip) : []), [trip]);
+  const [path, setPath] = useState<TripPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!trip || !device) { setLoading(false); return; }
+    let mounted = true;
+    setLoading(true);
+    getTripPath(device.id, trip).then((pts) => {
+      if (!mounted) return;
+      setPath(pts);
+      setLoading(false);
+    });
+    return () => { mounted = false; };
+  }, [trip, device]);
+
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(2);
@@ -60,6 +74,20 @@ function TripDetail() {
       </AppShell>
     );
   }
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="p-8 text-sm text-[var(--text-secondary)]">Chargement du trajet…</div>
+      </AppShell>
+    );
+  }
+  if (path.length === 0) {
+    return (
+      <AppShell>
+        <div className="p-8 text-sm text-[var(--text-secondary)]">Aucune donnée de tracé disponible pour ce trajet.</div>
+      </AppShell>
+    );
+  }
 
   const current = path[idx] ?? path[0];
   const traveled = path.slice(0, idx + 1).map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -84,17 +112,9 @@ function TripDetail() {
     const r = (e.clientX - rect.left) / rect.width;
     setIdx(Math.max(0, Math.min(path.length - 1, Math.round(r * (path.length - 1)))));
   };
-  const onShare = async () => {
-    const url = `${window.location.origin}/share/${trip.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Lien copié dans le presse-papier");
-    } catch {
-      toast.error("Impossible de copier");
-    }
-  };
-  const onExport = () => {
-    downloadGPX(trip);
+  const onExport = async () => {
+    if (!device) return;
+    await downloadGPX(device.id, trip);
     toast.success(`autotrack-${trip.id}.gpx téléchargé`);
   };
 
@@ -132,12 +152,6 @@ function TripDetail() {
           className="glass h-11 px-3 flex items-center gap-2 text-sm hover:bg-[var(--bg-elevated)]"
         >
           <Download className="size-4" /> <span className="hidden md:inline">GPX</span>
-        </button>
-        <button
-          onClick={onShare}
-          className="glass h-11 px-3 flex items-center gap-2 text-sm hover:bg-[var(--bg-elevated)]"
-        >
-          <Share2 className="size-4" /> <span className="hidden md:inline">Partager</span>
         </button>
       </div>
 

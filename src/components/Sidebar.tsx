@@ -11,6 +11,7 @@ import {
   LogOut,
   PanelLeftOpen,
   PanelLeftClose,
+  MoreHorizontal,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -117,28 +118,67 @@ export function Sidebar() {
   );
 }
 
-/** Mobile bottom-nav (5 primary tabs). */
+/** Mobile bottom-nav (4 primary tabs + "Plus" overflow for the rest). */
 export function MobileNav() {
   const { pathname } = useLocation();
-  const tabs = items.slice(0, 5);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const primary = items.slice(0, 4);
+  const overflow = items.slice(4);
+  const isActive = (to: string) => pathname === to || (to !== "/" && pathname.startsWith(to));
+  const overflowActive = overflow.some((i) => isActive(i.to));
+
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 glass-strong rounded-none border-t border-[var(--border)] border-x-0 border-b-0 flex h-16 px-2">
-      {tabs.map(({ to, label, icon: Icon }) => {
-        const active = pathname === to || (to !== "/" && pathname.startsWith(to));
-        return (
+    <>
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 glass-strong rounded-none border-t border-[var(--border)] border-x-0 border-b-0 flex h-16 px-2">
+        {primary.map(({ to, label, icon: Icon }) => (
           <Link
             key={to}
             to={to}
             className={cn(
               "flex-1 flex flex-col items-center justify-center gap-1 text-[10px]",
-              active ? "text-[var(--accent-primary)]" : "text-[var(--text-secondary)]",
+              isActive(to) ? "text-[var(--accent-primary)]" : "text-[var(--text-secondary)]",
             )}
           >
             <Icon className="size-[20px]" />
             <span>{label}</span>
           </Link>
-        );
-      })}
-    </nav>
+        ))}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          className={cn(
+            "flex-1 flex flex-col items-center justify-center gap-1 text-[10px]",
+            overflowActive ? "text-[var(--accent-primary)]" : "text-[var(--text-secondary)]",
+          )}
+        >
+          <MoreHorizontal className="size-[20px]" />
+          <span>Plus</span>
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-40" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMoreOpen(false)} />
+          <div className="absolute bottom-16 inset-x-0 glass-strong border-t border-[var(--border)] rounded-t-2xl p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] space-y-1 animate-in slide-in-from-bottom duration-150">
+            {overflow.map(({ to, label, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                onClick={() => setMoreOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 px-4 h-12 rounded-xl text-sm transition-colors",
+                  isActive(to)
+                    ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]/60",
+                )}
+              >
+                <Icon className="size-[18px]" />
+                <span className="flex-1">{label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

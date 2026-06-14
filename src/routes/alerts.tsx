@@ -64,12 +64,8 @@ function AlertsPage() {
     await supabase.from("alerts").update({ read: true }).eq("id", id);
   };
 
-  const onLocate = async (lat: number, lng: number) => {
-    await notify({
-      title: "Position de l'alerte",
-      description: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-      tone: "info",
-    });
+  const onLocate = (lat: number, lng: number) => {
+    window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank");
   };
 
   return (
@@ -102,9 +98,9 @@ function AlertsPage() {
             </div>
           </div>
           {[
-            { label: "Chocs", value: 2, color: "var(--accent-red)" },
-            { label: "Mouvements", value: 5, color: "var(--accent-amber)" },
-            { label: "Géozone", value: 1, color: "var(--accent-cyan)" },
+            { label: "Chocs", value: alerts.filter((a) => a.type === "shock").length, color: "var(--accent-red)" },
+            { label: "Mouvements", value: alerts.filter((a) => a.type === "movement").length, color: "var(--accent-amber)" },
+            { label: "Géozone", value: alerts.filter((a) => a.type === "geofence").length, color: "var(--accent-cyan)" },
           ].map((c) => (
             <div key={c.label} className="card-elev p-4">
               <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">{c.label}</div>

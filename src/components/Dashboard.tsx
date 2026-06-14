@@ -3,7 +3,7 @@ import {
   Satellite,
   SignalHigh,
   Battery,
-  Thermometer,
+  Radio,
   Power,
   Activity,
   Copy,
@@ -19,17 +19,39 @@ import {
   Ruler,
   X,
 } from "lucide-react";
-import { useApp } from "@/lib/store";
+import { useApp, type GpsSource } from "@/lib/store";
 import { MapCanvas } from "./MapCanvas";
 import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { confirm, notify } from "./ConfirmDialog";
+import { notify } from "./ConfirmDialog";
 
 function distM(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371000, toRad = (x: number) => (x * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function gpsSourceInfo(source: GpsSource | null) {
+  switch (source) {
+    case "SIM7080G_PRIMARY":
+      return { short: "GNSS", long: "GNSS (SIM7080G)", color: "var(--accent-cyan)" };
+    case "NEO6M_FALLBACK":
+      return { short: "NEO-6M", long: "GPS secours (NEO-6M)", color: "var(--accent-amber)" };
+    case "NO_FIX":
+      return { short: "NO FIX", long: "Aucun fix GPS", color: "var(--accent-red)" };
+    default:
+      return { short: "—", long: "—", color: "var(--text-secondary)" };
+  }
+}
+
+const SHOCK_THRESHOLD_G = 2.5;
+function shockStatus(accel: { x: number; y: number; z: number }) {
+  const mag = Math.max(Math.abs(accel.x), Math.abs(accel.y), Math.abs(accel.z));
+  if (mag >= SHOCK_THRESHOLD_G) {
+    return { label: "Choc détecté", short: "CHOC", color: "var(--accent-red)" };
+  }
+  return { label: "Stable — pas de choc détecté", short: "STABLE", color: "var(--accent-green)" };
 }
 
 export function Dashboard() {
@@ -379,7 +401,7 @@ function VitalsPanel() {
           <Chip icon={Satellite} value={`${t.satellites} SAT`} tone="cyan" />
           <Chip icon={SignalHigh} value={`${t.gsmBars}/5`} tone="green" />
           <Chip icon={Battery} value={`${Math.round(t.batteryMain)}%`} tone="green" />
-          <Chip icon={Thermometer} value={`42°C`} tone="amber" />
+          <Chip icon={Radio} value={gpsSourceInfo(t.gpsSource).short} color={gpsSourceInfo(t.gpsSource).color} />
         </div>
         <div className="mt-2 flex items-center justify-between text-[11px] mono text-[var(--text-secondary)]">
           <span>{t.gsmCarrier} · GPRS</span>
@@ -395,8 +417,8 @@ function VitalsPanel() {
           Système d'alimentation
         </span>
         <div className="grid grid-cols-2 gap-3 mt-3">
-          <CircularGauge label="Principale" value={Math.round(t.batteryMain)} sub="~8h 12min" />
-          <CircularGauge label="Anti-vol" value={Math.round(t.batteryBackup)} sub="~6h 45min" charging />
+          <CircularGauge label="Principale" value={Math.round(t.batteryMain)} />
+          <CircularGauge label="Anti-vol" value={Math.round(t.batteryBackup)} />
         </div>
       </div>
 
@@ -424,24 +446,8 @@ function VitalsPanel() {
             >
               {t.engineOn ? "Moteur en marche" : "Moteur coupé"}
             </div>
-            <div className="text-[11px] text-[var(--text-secondary)]">PIN requis</div>
+            <div className="text-[11px] text-[var(--text-secondary)]">Détection automatique (capteur de tension)</div>
           </div>
-          <button
-            onClick={async () => {
-              const ok = await confirm({
-                title: t.engineOn ? "Couper le moteur ?" : "Remettre en marche ?",
-                description: t.engineOn
-                  ? "Le moteur sera immédiatement coupé. Assurez-vous que la moto est à l'arrêt."
-                  : "Le démarrage moteur sera autorisé à distance.",
-                tone: t.engineOn ? "danger" : "warning",
-                confirmLabel: t.engineOn ? "Couper" : "Démarrer",
-              });
-              if (ok) await notify({ title: "Commande envoyée", description: "L'appareil applique la commande.", tone: "success" });
-            }}
-            className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/10 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/20 transition-colors font-medium"
-          >
-            {t.engineOn ? "Couper" : "Démarrer"}
-          </button>
         </div>
       </div>
 
@@ -453,8 +459,11 @@ function VitalsPanel() {
           <span className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold">
             Accéléromètre
           </span>
-          <span className="text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--accent-green)]">
-            STABLE
+          <span
+            className="text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]"
+            style={{ color: shockStatus(t.accel).color }}
+          >
+            {shockStatus(t.accel).short}
           </span>
         </div>
         <div className="mt-3 space-y-2">
@@ -480,11 +489,12 @@ function VitalsPanel() {
   );
 }
 
-function Chip({ icon: Icon, value, tone }: { icon: typeof Satellite; value: string; tone: "cyan" | "green" | "amber" }) {
+function Chip({ icon: Icon, value, tone, color }: { icon: typeof Satellite; value: string; tone?: "cyan" | "green" | "amber"; color?: string }) {
   const colorMap = { cyan: "var(--accent-cyan)", green: "var(--accent-green)", amber: "var(--accent-amber)" };
+  const c = color ?? (tone ? colorMap[tone] : "var(--text-secondary)");
   return (
     <div className="card-elev px-2.5 h-9 flex items-center gap-2">
-      <Icon className="size-3.5 shrink-0" style={{ color: colorMap[tone] }} />
+      <Icon className="size-3.5 shrink-0" style={{ color: c }} />
       <span className="text-xs mono font-medium">{value}</span>
     </div>
   );
@@ -511,7 +521,7 @@ function SignalBars({ bars }: { bars: number }) {
   );
 }
 
-function CircularGauge({ label, value, sub, charging }: { label: string; value: number; sub: string; charging?: boolean }) {
+function CircularGauge({ label, value }: { label: string; value: number }) {
   const r = 26;
   const c = 2 * Math.PI * r;
   const color = value > 30 ? "var(--accent-green)" : value > 15 ? "var(--accent-amber)" : "var(--accent-red)";
@@ -537,17 +547,16 @@ function CircularGauge({ label, value, sub, charging }: { label: string; value: 
           {value}%
         </div>
       </div>
-      <div className="mt-1.5 text-[11px] text-[var(--text-primary)] font-medium flex items-center gap-1">
+      <div className="mt-1.5 text-[11px] text-[var(--text-primary)] font-medium">
         {label}
-        {charging && <span className="text-[var(--accent-amber)]">⚡</span>}
       </div>
-      <div className="text-[10px] mono text-[var(--text-secondary)]">{sub}</div>
     </div>
   );
 }
 
 function LiveTab() {
   const t = useApp((s) => s.telemetry);
+  const trips = useApp((s) => s.trips);
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -603,7 +612,9 @@ function LiveTab() {
             <div className="text-[10px] text-[var(--text-secondary)]">Altitude</div>
           </div>
         </div>
-        <div className="text-[10px] mono text-[var(--text-secondary)] mt-2">Max trajet: 74 km/h</div>
+        <div className="text-[10px] mono text-[var(--text-secondary)] mt-2">
+          {trips[0] ? `Max trajet: ${trips[0].maxSpeed} km/h` : "Max trajet: —"}
+        </div>
       </div>
 
       <div className="card-elev p-3">
@@ -630,8 +641,8 @@ function LiveTab() {
             <div className="text-[var(--text-primary)]">±{t.hdop.toFixed(1)}m</div>
           </div>
           <div>
-            <div className="text-[var(--text-secondary)]">Fix</div>
-            <div className="text-[var(--accent-green)]">3D Fix</div>
+            <div className="text-[var(--text-secondary)]">Source GPS</div>
+            <div style={{ color: gpsSourceInfo(t.gpsSource).color }}>{gpsSourceInfo(t.gpsSource).long}</div>
           </div>
           <div>
             <div className="text-[var(--text-secondary)]">Dernier</div>
@@ -647,8 +658,8 @@ function LiveTab() {
           Activité capteurs
         </span>
         <div className="mt-2 flex items-center gap-2">
-          <Activity className="size-4 text-[var(--accent-green)]" />
-          <span className="text-xs">Stable — pas de choc détecté</span>
+          <Activity className="size-4" style={{ color: shockStatus(t.accel).color }} />
+          <span className="text-xs">{shockStatus(t.accel).label}</span>
         </div>
       </div>
     </>
@@ -656,32 +667,44 @@ function LiveTab() {
 }
 
 function TripsTab() {
-  const trips = useApp((s) => s.trips).slice(0, 5);
-  const total = trips.slice(0, 3).reduce((s, t) => s + t.distanceKm, 0).toFixed(1);
+  const allTrips = useApp((s) => s.trips);
+  const trips = allTrips.slice(0, 5);
+  const last3 = allTrips.slice(0, 3);
+  const totalDistance = last3.reduce((s, t) => s + t.distanceKm, 0);
+  const totalDurationMin = last3.reduce((s, t) => s + t.durationMin, 0);
+  const durationLabel = last3.length
+    ? `${Math.floor(totalDurationMin / 60)}h${String(Math.round(totalDurationMin % 60)).padStart(2, "0")}`
+    : "—";
   return (
     <>
       <div className="card-elev p-3 grid grid-cols-3 gap-2 text-center">
-        <KPI label="Trajets" value="3" />
-        <KPI label="Distance" value={`${total}km`} />
-        <KPI label="Durée" value="1h23" />
+        <KPI label="Trajets" value={`${last3.length}`} />
+        <KPI label="Distance" value={`${totalDistance.toFixed(1)}km`} />
+        <KPI label="Durée" value={durationLabel} />
       </div>
-      {trips.map((t) => (
-        <a
-          key={t.id}
-          href={`/trips/${t.id}`}
-          className="card-elev p-3 block hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
-        >
-          <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
-            <span suppressHydrationWarning>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
-            <span>{t.distanceKm} km</span>
-          </div>
-          <div className="text-xs truncate">{t.endAddress}</div>
-          <div className="flex items-center justify-between mt-1">
-            <span className="text-[10px] mono text-[var(--text-secondary)]">max {t.maxSpeed}km/h</span>
-            <span className="text-[10px] text-[var(--accent-primary)]">▶ Replay</span>
-          </div>
-        </a>
-      ))}
+      {trips.length === 0 ? (
+        <div className="card-elev p-4 text-xs text-[var(--text-secondary)] text-center">
+          Aucun trajet enregistré pour le moment.
+        </div>
+      ) : (
+        trips.map((t) => (
+          <a
+            key={t.id}
+            href={`/trips/${t.id}`}
+            className="card-elev p-3 block hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
+              <span suppressHydrationWarning>{new Date(t.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
+              <span>{t.distanceKm} km</span>
+            </div>
+            <div className="text-xs truncate">{t.endAddress}</div>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[10px] mono text-[var(--text-secondary)]">max {t.maxSpeed}km/h</span>
+              <span className="text-[10px] text-[var(--accent-primary)]">▶ Replay</span>
+            </div>
+          </a>
+        ))
+      )}
     </>
   );
 }

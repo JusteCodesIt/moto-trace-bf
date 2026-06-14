@@ -1,8 +1,4 @@
-/**
- * Deterministic trip path generator.
- * Each trip ID always produces the same realistic GPS trace around Ouagadougou.
- */
-
+import { supabase } from "@/integrations/supabase/client";
 import type { Trip } from "./store";
 
 export interface TripPoint {
@@ -13,81 +9,111 @@ export interface TripPoint {
   t: number;       // seconds from trip start
 }
 
-const OUAGA = { lat: 12.364, lng: -1.5328 };
+type TripRow = {
+  lat: number;
+  lng: number;
+  speed_kmh: number | null;
+  heading: number | null;
+  engine_on: boolean | null;
+  recorded_at: string;
+};
 
-/** Tiny seeded PRNG (mulberry32). */
-function rng(seed: number) {
-  let a = seed | 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+// Capte les sauts de position (device hors-ligne puis reconnecté loin) sans les compter comme distance parcourue
+const MAX_HOP_KM = 3;
+const MIN_TRIP_DURATION_MIN = 2;
+const MIN_TRIP_DISTANCE_KM = 0.2;
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371, toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function coordLabel(lat: number, lng: number) {
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
+
+/** Découpe l'historique de télémétrie en trajets contigus (moteur en marche). */
+export function deriveTrips(rows: TripRow[], deviceOnline: boolean): Trip[] {
+  const trips: Trip[] = [];
+  let run: TripRow[] = [];
+
+  const flush = () => {
+    if (run.length < 2) { run = []; return; }
+    const first = run[0];
+    const last = run[run.length - 1];
+    const startTs = new Date(first.recorded_at).getTime();
+    const endTs = new Date(last.recorded_at).getTime();
+    const durationMin = Math.round((endTs - startTs) / 60000);
+
+    let distanceKm = 0;
+    let maxSpeed = 0;
+    let speedSum = 0;
+    for (let i = 0; i < run.length; i++) {
+      const speed = run[i].speed_kmh ?? 0;
+      maxSpeed = Math.max(maxSpeed, speed);
+      speedSum += speed;
+      if (i > 0) {
+        const d = haversineKm(run[i - 1].lat, run[i - 1].lng, run[i].lat, run[i].lng);
+        if (d <= MAX_HOP_KM) distanceKm += d;
+      }
+    }
+    const avgSpeed = run.length > 0 ? speedSum / run.length : 0;
+
+    if (durationMin >= MIN_TRIP_DURATION_MIN || distanceKm >= MIN_TRIP_DISTANCE_KM) {
+      trips.push({
+        id: String(startTs),
+        date: startTs,
+        durationMin,
+        distanceKm: +distanceKm.toFixed(2),
+        maxSpeed: Math.round(maxSpeed),
+        avgSpeed: Math.round(avgSpeed),
+        startAddress: coordLabel(first.lat, first.lng),
+        endAddress: coordLabel(last.lat, last.lng),
+        status: "completed",
+      });
+    }
+    run = [];
   };
+
+  for (const r of rows) {
+    if (r.engine_on) run.push(r);
+    else flush();
+  }
+  // Trajet en cours : moteur toujours en marche au dernier point et device en ligne
+  const stillRunning = deviceOnline && run.length >= 2;
+  if (stillRunning) {
+    flush();
+    if (trips.length > 0) trips[trips.length - 1].status = "active";
+  } else {
+    flush();
+  }
+
+  return trips.reverse();
 }
 
-function hashId(id: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
+/** Récupère le tracé réel d'un trajet depuis la télémétrie historique. */
+export async function getTripPath(deviceId: string, trip: Trip): Promise<TripPoint[]> {
+  const start = new Date(trip.date).toISOString();
+  const end = new Date(trip.date + trip.durationMin * 60_000 + 60_000).toISOString();
 
-const _cache = new Map<string, TripPoint[]>();
+  const { data } = await supabase
+    .from("telemetry")
+    .select("lat,lng,speed_kmh,heading,recorded_at")
+    .eq("device_id", deviceId)
+    .gte("recorded_at", start)
+    .lte("recorded_at", end)
+    .order("recorded_at", { ascending: true });
 
-export function buildTripPath(trip: Trip): TripPoint[] {
-  const cached = _cache.get(trip.id);
-  if (cached) return cached;
-
-  const r = rng(hashId(trip.id));
-  // 1 point ≈ every 5 simulated seconds.
-  const totalSec = trip.durationMin * 60;
-  const stepSec = 5;
-  const steps = Math.max(20, Math.floor(totalSec / stepSec));
-
-  // Start somewhere offset from centre, deterministic per trip.
-  const startOffsetLat = (r() - 0.5) * 0.06;
-  const startOffsetLng = (r() - 0.5) * 0.06;
-  let lat = OUAGA.lat + startOffsetLat;
-  let lng = OUAGA.lng + startOffsetLng;
-  let heading = r() * 360;
-
-  // Average per-step displacement so total ≈ distanceKm.
-  // 1 deg lat ≈ 111 km; cos(lat) factor for lng. We treat avg directly.
-  const avgKmPerStep = trip.distanceKm / steps;
-  const avgDegPerStep = avgKmPerStep / 111;
-
-  const pts: TripPoint[] = [];
-  for (let i = 0; i < steps; i++) {
-    // smooth heading wander
-    heading = (heading + (r() - 0.5) * 25 + 360) % 360;
-    const headRad = (heading * Math.PI) / 180;
-    const stepDeg = avgDegPerStep * (0.7 + r() * 0.6);
-    lat += Math.cos(headRad) * stepDeg;
-    lng += Math.sin(headRad) * stepDeg / Math.cos((lat * Math.PI) / 180);
-
-    // realistic speed profile: ramps up, plateau, ramps down
-    const phase = i / steps;
-    const envelope =
-      phase < 0.15 ? phase / 0.15 :
-      phase > 0.85 ? (1 - phase) / 0.15 : 1;
-    const base = trip.avgSpeed * envelope;
-    const noise = (r() - 0.5) * 15;
-    const speed = Math.max(0, Math.min(trip.maxSpeed, base + noise));
-
-    pts.push({
-      lat: +lat.toFixed(6),
-      lng: +lng.toFixed(6),
-      speed: +speed.toFixed(1),
-      heading: +heading.toFixed(1),
-      t: i * stepSec,
-    });
-  }
-  _cache.set(trip.id, pts);
-  return pts;
+  if (!data) return [];
+  return data.map((r: any) => ({
+    lat: r.lat,
+    lng: r.lng,
+    speed: r.speed_kmh ?? 0,
+    heading: r.heading ?? 0,
+    t: Math.round((new Date(r.recorded_at).getTime() - trip.date) / 1000),
+  }));
 }
 
 /** Convert a trip path to a GPX 1.1 XML string. */
@@ -114,8 +140,8 @@ export function toGPX(trip: Trip, path: TripPoint[]): string {
 </gpx>`;
 }
 
-export function downloadGPX(trip: Trip) {
-  const path = buildTripPath(trip);
+export async function downloadGPX(deviceId: string, trip: Trip) {
+  const path = await getTripPath(deviceId, trip);
   const blob = new Blob([toGPX(trip, path)], { type: "application/gpx+xml" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

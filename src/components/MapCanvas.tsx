@@ -121,7 +121,7 @@ export function MapCanvas({
   const trailRef = useRef<google.maps.Polyline | null>(null);
   const fullPathRef = useRef<google.maps.Polyline | null>(null);
   const pinsRef = useRef<google.maps.Marker[]>([]);
-  const zoneShapesRef = useRef<Array<google.maps.Circle | google.maps.Rectangle>>([]);
+  const zoneShapesRef = useRef<Map<string, { overlay: google.maps.Circle | google.maps.Rectangle; shape: GeoZone["shape"]; lat: number; lng: number; radius: number }>>(new Map());
   const editingShapeRef = useRef<google.maps.Circle | google.maps.Rectangle | null>(null);
   const measureRef = useRef<{
     pts: google.maps.LatLng[];
@@ -176,8 +176,8 @@ export function MapCanvas({
       cancelled = true;
       pinsRef.current.forEach((m) => m.setMap(null));
       pinsRef.current = [];
-      zoneShapesRef.current.forEach((s) => s.setMap(null));
-      zoneShapesRef.current = [];
+      zoneShapesRef.current.forEach((z) => z.overlay.setMap(null));
+      zoneShapesRef.current.clear();
       editingShapeRef.current?.setMap(null);
       editingShapeRef.current = null;
       measureRef.current.line?.setMap(null);
@@ -194,18 +194,21 @@ export function MapCanvas({
       fullPathRef.current = null;
       fittedRef.current = false;
     };
+    // Mount-only: re-init only on actual remount, not on style/theme changes
+    // (those are applied live below without rebuilding the map instance).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [style]);
+  }, []);
 
-  // theme — live restyle of the streets map
+  // style/theme — live restyle without rebuilding the map instance
   useEffect(() => {
     if (!ready || !mapRef.current) return;
-    if (style === "satellite") return;
+    const g = (window as any).google as typeof google;
     mapRef.current.setOptions({
-      styles: theme === "dark" ? DARK_STYLE : null,
+      mapTypeId: style === "satellite" ? g.maps.MapTypeId.HYBRID : g.maps.MapTypeId.ROADMAP,
+      styles: style === "satellite" ? undefined : (theme === "dark" ? DARK_STYLE : null),
       backgroundColor: theme === "dark" ? "#07080F" : "#e8eef7",
     });
-  }, [theme, style, ready]);
+  }, [style, theme, ready]);
 
   // vehicle position
 
@@ -282,30 +285,51 @@ export function MapCanvas({
     }
   }, [startPoint, endPoint, ready]);
 
-  // zones (persisted)
+  // zones (persisted) — diff against previous overlays so a position-driven
+  // in/out status change only updates colors instead of recreating every
+  // shape on each telemetry tick.
   useEffect(() => {
     if (!ready || !mapRef.current) return;
     const g = (window as any).google as typeof google;
-    zoneShapesRef.current.forEach((s) => s.setMap(null));
-    zoneShapesRef.current = [];
+    const map = mapRef.current;
+    const seen = new Set<string>();
     (zones ?? []).forEach((z) => {
+      seen.add(z.id);
       const color = z.status === "in" ? "#10F58F" : "#22d3ff";
+      const existing = zoneShapesRef.current.get(z.id);
+      const geomChanged =
+        !existing || existing.shape !== z.shape || existing.lat !== z.lat ||
+        existing.lng !== z.lng || existing.radius !== z.radius;
+      if (!geomChanged) {
+        existing.overlay.setOptions({ strokeColor: color, fillColor: color });
+        return;
+      }
+      existing?.overlay.setMap(null);
+      let overlay: google.maps.Circle | google.maps.Rectangle;
       if (z.shape === "rect") {
         const d = z.radius / 111320; // approx deg per meter
-        zoneShapesRef.current.push(new g.maps.Rectangle({
-          map: mapRef.current!,
+        overlay = new g.maps.Rectangle({
+          map,
           bounds: { north: z.lat + d, south: z.lat - d, east: z.lng + d, west: z.lng - d },
           strokeColor: color, strokeOpacity: 0.9, strokeWeight: 2,
           fillColor: color, fillOpacity: 0.08, clickable: false,
-        }));
+        });
       } else {
-        zoneShapesRef.current.push(new g.maps.Circle({
-          map: mapRef.current!, center: { lat: z.lat, lng: z.lng }, radius: z.radius,
+        overlay = new g.maps.Circle({
+          map, center: { lat: z.lat, lng: z.lng }, radius: z.radius,
           strokeColor: color, strokeOpacity: 0.9, strokeWeight: 2,
           fillColor: color, fillOpacity: 0.08, clickable: false,
-        }));
+        });
       }
+      zoneShapesRef.current.set(z.id, { overlay, shape: z.shape, lat: z.lat, lng: z.lng, radius: z.radius });
     });
+    // remove overlays for zones no longer present
+    for (const [id, entry] of zoneShapesRef.current) {
+      if (!seen.has(id)) {
+        entry.overlay.setMap(null);
+        zoneShapesRef.current.delete(id);
+      }
+    }
   }, [zones, ready]);
 
   // editing zone (highlighted)

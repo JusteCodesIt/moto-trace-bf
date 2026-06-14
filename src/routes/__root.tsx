@@ -10,6 +10,7 @@ import {
 import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "@/lib/theme";
 import { SplashScreen } from "@/components/SplashScreen";
+import { AuthGate } from "@/lib/auth";
 
 import appCss from "../styles.css?url";
 
@@ -98,7 +99,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <SplashScreen />
-        <Outlet />
+        <AuthGate>
+          <Outlet />
+        </AuthGate>
         <Toaster
           position="top-right"
           toastOptions={{

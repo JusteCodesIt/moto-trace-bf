@@ -14,8 +14,9 @@ export const Route = createFileRoute("/remote")({
 });
 
 /**
- * Only commands actually supported by the hardware described in the project README:
- * XIAO ESP32-S3 + MAX-M8Q (GPS) + SIM7600G (4G) + LiPo backup + DC-DC.
+ * Only commands actually supported by the AutoTrack hardware:
+ * LILYGO T-SIM7080G-S3 (ESP32-S3-WROOM-1 + SIM7080G 4G/LTE + GPS NEO-6M de
+ * secours + batterie LiPo).
  * No relay → no engine cut. No user LED → no flashing. No buzzer.
  */
 const COMMANDS = [
@@ -23,7 +24,7 @@ const COMMANDS = [
   { kind: "locate" as const, icon: MapPin, title: "Fix rapide", desc: "Re-acquisition GPS (cold-warm boot)" },
   { kind: "low_power" as const, icon: BatteryLow, title: "Mode économique", desc: "Réduit la fréquence d'émission (1 trame / 5 min)" },
   { kind: "wake" as const, icon: Power, title: "Sortir du low-power", desc: "Reprend la cadence normale (1 trame / 30 s)" },
-  { kind: "reboot" as const, icon: RotateCw, title: "Redémarrer", desc: "Reboot logiciel ESP32-S3 + ré-init SIM7600G" },
+  { kind: "reboot" as const, icon: RotateCw, title: "Redémarrer", desc: "Reboot logiciel ESP32-S3 + ré-init SIM7080G" },
 ];
 
 type Cmd = { id: string; kind: string; status: string; created_at: string };
@@ -67,13 +68,21 @@ function RemotePage() {
   };
 
   const sharePosition = async (durHours: number) => {
+    if (!device) { await notify({ title: "Aucun tracker", tone: "warning" }); return; }
     const ok = await confirm({
       title: `Générer un lien de partage ${durHours}h ?`,
       description: "Toute personne avec ce lien pourra suivre votre position en direct pendant la durée choisie.",
       tone: "warning", confirmLabel: "Générer",
     });
     if (!ok) return;
-    const token = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const token = crypto.randomUUID().replace(/-/g, "");
+    const expiresAt = new Date(Date.now() + durHours * 3600_000).toISOString();
+    const { error } = await supabase.from("share_links").insert({
+      token, device_id: device.id, created_by: user.id, expires_at: expiresAt,
+    });
+    if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
     const url = `${window.location.origin}/share/${token}`;
     try { await navigator.clipboard.writeText(url); } catch {}
     await notify({ title: `Lien ${durHours}h copié`, description: url, tone: "success" });
@@ -81,7 +90,7 @@ function RemotePage() {
 
   return (
     <AppShell>
-      <PageHeader title="Contrôle distant" subtitle="Commandes hardware ESP32-S3" icon={Power} />
+      <PageHeader title="Contrôle distant" subtitle="Commandes hardware T-SIM7080G-S3" icon={Power} />
 
       <div className="p-4 md:p-8 pb-24 max-w-5xl mx-auto space-y-6">
         {/* Status */}
@@ -106,10 +115,12 @@ function RemotePage() {
         {/* Hardware-capability note */}
         <div className="card-elev p-4 border-l-4 border-[var(--accent-cyan)] text-xs text-[var(--text-secondary)] leading-relaxed">
           <span className="font-semibold text-[var(--text-primary)]">Capacités matérielles :</span>{" "}
-          Le tracker AutoTrack (XIAO ESP32-S3 + MAX-M8Q + SIM7600G) supporte la téléportation
-          GPS, le mode low-power et le reboot logiciel. La coupure moteur, l'avertisseur sonore
-          et la LED utilisateur <b>ne sont pas installés</b> sur cette configuration et ne sont
-          donc pas exposés ici.
+          Le tracker AutoTrack (LILYGO T-SIM7080G-S3 : ESP32-S3 + SIM7080G 4G/LTE + GPS NEO-6M
+          de secours) supporte le forçage d'une trame de position, le mode low-power et le
+          reboot logiciel. La coupure moteur, l'avertisseur sonore et la LED utilisateur{" "}
+          <b>ne sont pas installés</b> sur cette configuration et ne sont donc pas exposés ici.
+          Ces commandes sont mises en file côté serveur ; leur exécution par le firmware à la
+          prochaine connexion est en cours de finalisation.
         </div>
 
         {/* Commands */}

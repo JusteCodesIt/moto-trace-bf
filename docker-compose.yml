@@ -1,0 +1,32 @@
+services:
+  # Dev server with hot reload. The repo is bind-mounted so edits made on the
+  # host are reflected immediately; node_modules stays inside the container
+  # (anonymous volume) so the image's Linux binaries aren't shadowed by the
+  # host's.
+  app:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+      # Server-only secrets (e.g. SUPABASE_SERVICE_ROLE_KEY) — gitignored,
+      # create it from .env.docker.example if you need server functions that
+      # require the Supabase service role.
+      - path: .env.docker
+        required: false
+    stdin_open: true
+    tty: true
+
+  # One-off production build / type-check, e.g.:
+  #   docker compose run --rm build
+  build:
+    build:
+      context: .
+      target: build
+    profiles: ["build"]
+    command: ["true"]

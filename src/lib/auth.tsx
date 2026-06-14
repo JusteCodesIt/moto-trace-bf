@@ -11,13 +11,21 @@ type AuthState = "loading" | "anon" | "authed";
 
 const PUBLIC_PATHS = new Set(["/auth/login"]);
 
+// Anonymous live-position share pages must never hit the auth gate —
+// no loading flash, no session check, no redirect to /auth/login.
+function isShareRoute(pathname: string) {
+  return pathname.startsWith("/share/");
+}
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>("loading");
   const { location } = useRouterState();
   const navigate = useNavigate();
+  const bypass = isShareRoute(location.pathname);
 
   // Bootstrap session
   useEffect(() => {
+    if (bypass) return;
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
@@ -28,11 +36,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (!session) { stopRealtime(); useApp.setState({ device: null, hasTelemetry: false, telemetry: useApp.getState().telemetry }); }
     });
     return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
+  }, [bypass]);
 
   // Provision + start realtime once authed
   useEffect(() => {
-    if (state !== "authed") return;
+    if (bypass || state !== "authed") return;
     let cancelled = false;
     (async () => {
       try {
@@ -48,15 +56,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [state]);
+  }, [bypass, state]);
 
   // Redirects
   useEffect(() => {
-    if (state === "loading") return;
+    if (bypass || state === "loading") return;
     const isPublic = PUBLIC_PATHS.has(location.pathname);
     if (state === "anon" && !isPublic) navigate({ to: "/auth/login", replace: true });
     if (state === "authed" && isPublic) navigate({ to: "/", replace: true });
-  }, [state, location.pathname, navigate]);
+  }, [bypass, state, location.pathname, navigate]);
+
+  if (bypass) return <>{children}</>;
 
   if (state === "loading") {
     return <InlinePreloader />;

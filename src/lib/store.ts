@@ -1,9 +1,12 @@
 import { create } from "zustand";
 
+export type GpsSource = "SIM7080G_PRIMARY" | "NEO6M_FALLBACK" | "NO_FIX";
+
 export interface TelemetryPoint {
   lat: number; lng: number;
   speed: number; heading: number; altitude: number;
   satellites: number; hdop: number;
+  gpsSource: GpsSource | null;
   batteryMain: number; batteryBackup: number;
   gsmBars: number; gsmCarrier: string;
   engineOn: boolean;
@@ -32,7 +35,7 @@ export interface DeviceInfo {
 
 const OUAGA: TelemetryPoint = {
   lat: 12.364, lng: -1.5328, speed: 0, heading: 0, altitude: 0,
-  satellites: 0, hdop: 0, batteryMain: 0, batteryBackup: 0,
+  satellites: 0, hdop: 0, gpsSource: null, batteryMain: 0, batteryBackup: 0,
   gsmBars: 0, gsmCarrier: "—", engineOn: false,
   accel: { x: 0, y: 0, z: 0 }, timestamp: 0,
 };
@@ -67,6 +70,7 @@ interface State {
   markAlertRead: (id: string) => void;
   markAllRead: () => void;
   unreadAlerts: () => number;
+  setTrips: (t: Trip[]) => void;
   setLeftPanelOpen: (v: boolean) => void;
   setRightPanelTab: (t: State["rightPanelTab"]) => void;
   setMapStyle: (s: State["mapStyle"]) => void;
@@ -108,6 +112,7 @@ export const useApp = create<State>((set, get) => ({
   markAlertRead: (id) => set((s) => ({ alerts: s.alerts.map((a) => a.id === id ? { ...a, read: true } : a) })),
   markAllRead: () => set((s) => ({ alerts: s.alerts.map((a) => ({ ...a, read: true })) })),
   unreadAlerts: () => get().alerts.filter((a) => !a.read).length,
+  setTrips: (trips) => set({ trips }),
   setLeftPanelOpen: (leftPanelOpen) => set({ leftPanelOpen }),
   setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
   setMapStyle: (mapStyle) => set({ mapStyle }),

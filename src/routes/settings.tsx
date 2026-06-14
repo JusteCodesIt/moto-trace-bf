@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Bell, Shield, Smartphone, User, Sliders, Sparkles, Copy, RefreshCw, Wifi, Radio, Download, CheckCircle2, LogOut } from "lucide-react";
+import { Bell, Shield, Smartphone, User, Sliders, Sparkles, Copy, RefreshCw, Radio, CheckCircle2, LogOut } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { SectionHero } from "@/components/SectionHero";
 import { useEffect, useState } from "react";
@@ -212,33 +212,19 @@ function ThresholdsSection({ settings, save }: SectionProps) {
   const onSave = async () => {
     const ok = await confirm({
       title: "Enregistrer les seuils ?",
-      description: "Les nouveaux seuils seront appliqués et envoyés au tracker.",
+      description: "Les nouveaux seuils seront appliqués aux alertes générées par l'application.",
       tone: "warning",
       confirmLabel: "Enregistrer",
     });
     if (!ok) return;
-    const patch = {
+    await save({
       thresholds: {
         speedKmh: Number(speed) || 0,
         shockG: Number(shock) || 0,
         geofenceDelaySec: Number(geo) || 0,
         lowBatteryPct: Number(batt) || 0,
       },
-    };
-    await save(patch);
-    try {
-      const { supabase } = await import("@/integrations/supabase/client");
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: dev } = await supabase.from("devices").select("id").eq("owner_id", user!.id).limit(1).maybeSingle();
-      if (dev) {
-        await supabase.from("commands").insert({
-          device_id: dev.id,
-          kind: "config",
-          issued_by: user!.id,
-          payload: patch.thresholds as never,
-        });
-      }
-    } catch { /* ignore */ }
+    });
     await notify({ title: "Seuils enregistrés", tone: "success" });
   };
 
@@ -362,9 +348,7 @@ function DeviceSection({ settings, save }: SectionProps) {
   const [keyRotatedAt, setKeyRotatedAt] = useState<string | null>(null);
   const [ingestUrl, setIngestUrl] = useState("/api/public/ingest");
   const [apiUrl, setApiUrl] = useState(net.apiUrl || "");
-  const [apn, setApn] = useState(net.apn || "internet.orange.bf");
-  const [wifiSsid, setWifiSsid] = useState(net.wifiSsid || "");
-  const [wifiPwd, setWifiPwd] = useState("");
+  const [apn, setApn] = useState(net.apn || "internet");
 
   useEffect(() => {
     (async () => {
@@ -442,48 +426,14 @@ function DeviceSection({ settings, save }: SectionProps) {
 
   const onSaveEndpoint = async () => {
     const ok = await confirm({
-      title: "Pousser cette configuration au tracker ?",
-      description: `Endpoint: ${apiUrl}\nAPN: ${apn}`,
+      title: "Enregistrer cette configuration réseau ?",
+      description: `Endpoint: ${apiUrl}\nAPN: ${apn}\n\nCes valeurs sont informatives : l'URL d'ingestion et l'APN doivent être compilés dans le firmware (include/secrets.h) pour être effectifs.`,
       tone: "warning",
-      confirmLabel: "Envoyer",
+      confirmLabel: "Enregistrer",
     });
     if (!ok) return;
     await save({ network: { ...net, apiUrl, apn } });
-    if (await sendCommand("config", { apiUrl, apn })) {
-      await notify({ title: "Configuration envoyée", tone: "success" });
-    }
-  };
-
-  const onSaveWifi = async () => {
-    if (!wifiSsid.trim()) {
-      await notify({ title: "SSID requis", tone: "warning" });
-      return;
-    }
-    const ok = await confirm({
-      title: "Provisionner ce Wi-Fi ?",
-      description: `SSID: ${wifiSsid}. Le module basculera en Wi-Fi quand disponible.`,
-      tone: "info",
-      confirmLabel: "Provisionner",
-    });
-    if (!ok) return;
-    await save({ network: { ...net, wifiSsid, wifiPwdSaved: !!wifiPwd } });
-    if (await sendCommand("wifi", { ssid: wifiSsid, password: wifiPwd })) {
-      setWifiPwd("");
-      await notify({ title: "Identifiants Wi-Fi envoyés", tone: "success" });
-    }
-  };
-
-  const onOTA = async () => {
-    const ok = await confirm({
-      title: "Lancer la mise à jour OTA ?",
-      description: "Le firmware sera téléchargé puis flashé. ~3 min hors-ligne.",
-      tone: "warning",
-      confirmLabel: "Mettre à jour",
-    });
-    if (!ok) return;
-    if (await sendCommand("ota", { version: "latest" })) {
-      await notify({ title: "OTA initié", tone: "success" });
-    }
+    await notify({ title: "Configuration enregistrée", tone: "success" });
   };
 
   const onPing = async () => {
@@ -533,7 +483,7 @@ function DeviceSection({ settings, save }: SectionProps) {
 
       <Card title="Endpoint backend & APN" action={
         <button onClick={onSaveEndpoint} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
-          Envoyer
+          Enregistrer
         </button>
       }>
         <div className="space-y-3">
@@ -556,31 +506,6 @@ function DeviceSection({ settings, save }: SectionProps) {
         </div>
       </Card>
 
-      <Card title="Wi-Fi de secours" action={
-        <button onClick={onSaveWifi} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 flex items-center gap-1.5">
-          <Wifi className="size-3.5" /> Provisionner
-        </button>
-      }>
-        <p className="text-xs text-[var(--text-secondary)] mb-3">
-          Quand le tracker est à portée, il bascule en Wi-Fi pour économiser le forfait data GSM.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <input
-            value={wifiSsid}
-            onChange={(e) => setWifiSsid(e.target.value)}
-            placeholder="SSID"
-            className="h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)]"
-          />
-          <input
-            value={wifiPwd}
-            onChange={(e) => setWifiPwd(e.target.value)}
-            type="password"
-            placeholder={net.wifiPwdSaved ? "•••••• (déjà enregistré)" : "Mot de passe"}
-            className="h-10 px-3 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)]"
-          />
-        </div>
-      </Card>
-
       <Card title="Clé HMAC (signature des trames)" action={
         <button onClick={onRotateHmac} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-elevated)] hover:bg-[var(--border-active)] flex items-center gap-1.5">
           <RefreshCw className="size-3.5" /> Régénérer
@@ -597,18 +522,13 @@ function DeviceSection({ settings, save }: SectionProps) {
         </div>
       </Card>
 
-      <Card title="Maintenance & OTA" action={
-        <div className="flex gap-2">
-          <button onClick={onOTA} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-cyan)]/15 text-[var(--accent-cyan)] font-semibold hover:bg-[var(--accent-cyan)]/25 flex items-center gap-1.5">
-            <Download className="size-3.5" /> OTA
-          </button>
-          <button onClick={onReboot} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/15 text-[var(--accent-red)] font-semibold hover:bg-[var(--accent-red)]/25">
-            Redémarrer
-          </button>
-        </div>
+      <Card title="Maintenance" action={
+        <button onClick={onReboot} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-red)]/15 text-[var(--accent-red)] font-semibold hover:bg-[var(--accent-red)]/25">
+          Redémarrer
+        </button>
       }>
         <p className="text-xs text-[var(--text-secondary)]">
-          Redémarrage à distance ou mise à jour OTA via SIM7600G.
+          Redémarrage à distance via le réseau cellulaire SIM7080G (commande mise en file, exécutée à la prochaine connexion du tracker).
         </p>
       </Card>
     </>

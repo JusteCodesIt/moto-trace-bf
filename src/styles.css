@@ -1,7 +1,6 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
-@import "maplibre-gl/dist/maplibre-gl.css";
 
 /* ─────────────────────────────────────────────────────
    AutoTrack — Premium Dark Design System
@@ -247,11 +246,6 @@
   0%, 100% { background-color: rgba(255, 61, 87, 0.15); }
   50% { background-color: rgba(255, 61, 87, 0.05); }
 }
-
-/* MapLibre overrides */
-.maplibregl-ctrl-attrib,
-.maplibregl-ctrl-logo { display: none !important; }
-.maplibregl-canvas { outline: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

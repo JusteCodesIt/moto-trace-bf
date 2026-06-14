@@ -1,43 +1,151 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BarChart3, TrendingUp, TrendingDown } from "lucide-react";
-import { useState } from "react";
+import { BarChart3 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { BarChart, Bar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { useApp } from "@/lib/store";
+import { supabase } from "@/integrations/supabase/client";
+import { fmtDuration } from "@/lib/format";
 
 export const Route = createFileRoute("/stats")({
   head: () => ({ meta: [{ title: "Analytics — AutoTrack" }] }),
   component: StatsPage,
 });
 
-const weekData = Array.from({ length: 7 }, (_, i) => ({
-  day: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][i],
-  km: 10 + Math.random() * 30,
-}));
+const PERIODS = { "7 jours": 7, "Mois": 30, "Trimestre": 90, "Année": 365 } as const;
+type Period = keyof typeof PERIODS;
 
-const speedData = Array.from({ length: 24 }, (_, i) => ({
-  h: `${i}h`,
-  v: 20 + Math.random() * 40,
-}));
+// Cadence nominale du firmware : 1 trame / 30s (mode normal)
+const SAMPLE_INTERVAL_SEC = 30;
+const SHOCK_THRESHOLD_G = 2.5;
+const SPEED_LIMIT_KMH = 80;
+// Capte les sauts de position (device hors-ligne puis reconnecté loin) sans les compter comme distance parcourue
+const MAX_REALISTIC_HOP_KM = 3;
 
-const KPIS = [
-  { label: "Total km", value: "247.8", delta: "+12%", up: true },
-  { label: "Temps trajet", value: "14h 23", delta: "+8%", up: true },
-  { label: "Trajets", value: "32", delta: "-3%", up: false },
-  { label: "Vitesse max", value: "94 km/h", delta: "+5%", up: false },
-];
+type TelRow = {
+  lat: number; lng: number;
+  speed_kmh: number | null;
+  battery_main: number | null;
+  accel_x: number | null; accel_y: number | null; accel_z: number | null;
+  gps_source: string | null;
+  recorded_at: string;
+};
 
-const SUBSCORES = [
-  { label: "Accélérations", value: 82 },
-  { label: "Freinages", value: 75 },
-  { label: "Virages", value: 88 },
-  { label: "Excès vitesse", value: 65 },
-  { label: "Conduite nuit", value: 90 },
-];
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371, toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function computeStats(rows: TelRow[]) {
+  // Daily distance — last 7 calendar days present in the dataset
+  const byDay = new Map<string, TelRow[]>();
+  for (const r of rows) {
+    const day = r.recorded_at.slice(0, 10);
+    (byDay.get(day) ?? byDay.set(day, []).get(day)!).push(r);
+  }
+  const days = [...byDay.keys()].sort().slice(-7);
+  const dailyDistance = days.map((day) => {
+    const pts = byDay.get(day)!;
+    let km = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const d = haversineKm(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng);
+      if (d <= MAX_REALISTIC_HOP_KM) km += d;
+    }
+    const date = new Date(day);
+    return { day: date.toLocaleDateString("fr-FR", { weekday: "short" }), km };
+  });
+
+  // Average speed per hour-of-day across the whole period
+  const byHour = new Map<number, number[]>();
+  for (const r of rows) {
+    const h = new Date(r.recorded_at).getHours();
+    (byHour.get(h) ?? byHour.set(h, []).get(h)!).push(r.speed_kmh ?? 0);
+  }
+  const hourlySpeed = Array.from({ length: 24 }, (_, h) => {
+    const vs = byHour.get(h);
+    return { h: `${h}h`, v: vs?.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0 };
+  });
+
+  const totalKm = dailyDistance.reduce((s, d) => s + d.km, 0);
+  const maxSpeed = rows.reduce((m, r) => Math.max(m, r.speed_kmh ?? 0), 0);
+  const movingSamples = rows.filter((r) => (r.speed_kmh ?? 0) > 3).length;
+  const drivingMin = Math.round((movingSamples * SAMPLE_INTERVAL_SEC) / 60);
+
+  let speedScore: number | null = null;
+  let stabilityScore: number | null = null;
+  let gpsScore: number | null = null;
+  let avgBattery: number | null = null;
+  if (rows.length > 0) {
+    speedScore = Math.round((rows.filter((r) => (r.speed_kmh ?? 0) <= SPEED_LIMIT_KMH).length / rows.length) * 100);
+    stabilityScore = Math.round(
+      (rows.filter((r) => Math.max(Math.abs(r.accel_x ?? 0), Math.abs(r.accel_y ?? 0), Math.abs(r.accel_z ?? 0)) < SHOCK_THRESHOLD_G).length / rows.length) * 100,
+    );
+    gpsScore = Math.round((rows.filter((r) => r.gps_source === "SIM7080G_PRIMARY").length / rows.length) * 100);
+    avgBattery = Math.round(rows.reduce((s, r) => s + (r.battery_main ?? 0), 0) / rows.length);
+  }
+  const overallScore = speedScore !== null && stabilityScore !== null && gpsScore !== null
+    ? Math.round((speedScore + stabilityScore + gpsScore) / 3)
+    : null;
+
+  return { dailyDistance, hourlySpeed, totalKm, maxSpeed, drivingMin, speedScore, stabilityScore, gpsScore, avgBattery, overallScore };
+}
 
 function StatsPage() {
-  const periods = ["7 jours", "Mois", "Trimestre", "Année"] as const;
-  const [period, setPeriod] = useState<(typeof periods)[number]>("7 jours");
+  const device = useApp((s) => s.device);
+  const trips = useApp((s) => s.trips);
+  const periods = Object.keys(PERIODS) as Period[];
+  const [period, setPeriod] = useState<Period>("7 jours");
+  const [rows, setRows] = useState<TelRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!device) { setLoading(false); return; }
+    let mounted = true;
+    setLoading(true);
+    const since = new Date(Date.now() - PERIODS[period] * 86400_000).toISOString();
+    supabase
+      .from("telemetry")
+      .select("lat,lng,speed_kmh,battery_main,accel_x,accel_y,accel_z,gps_source,recorded_at")
+      .eq("device_id", device.id)
+      .gte("recorded_at", since)
+      .order("recorded_at", { ascending: true })
+      .limit(5000)
+      .then(({ data }) => {
+        if (!mounted) return;
+        setRows((data as TelRow[]) ?? []);
+        setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [device, period]);
+
+  const stats = useMemo(() => computeStats(rows), [rows]);
+  const hasData = rows.length > 0;
+
+  const scoreLabel = (s: number | null) => {
+    if (s === null) return "Pas encore de données";
+    if (s >= 80) return "Excellent conducteur";
+    if (s >= 60) return "Bon conducteur";
+    if (s >= 40) return "Conduite à surveiller";
+    return "Conduite risquée";
+  };
+
+  const KPIS = [
+    { label: "Total km", value: `${stats.totalKm.toFixed(1)}` },
+    { label: "Temps de conduite", value: hasData ? fmtDuration(stats.drivingMin) : "—" },
+    { label: "Trajets", value: `${trips.length}` },
+    { label: "Vitesse max", value: hasData ? `${Math.round(stats.maxSpeed)} km/h` : "—" },
+  ];
+
+  const SUBSCORES = [
+    { label: "Vitesse maîtrisée", value: stats.speedScore },
+    { label: "Stabilité (chocs)", value: stats.stabilityScore },
+    { label: "Disponibilité GPS", value: stats.gpsScore },
+    { label: "Batterie moyenne", value: stats.avgBattery },
+  ];
+
   return (
     <AppShell>
       <PageHeader
@@ -60,19 +168,22 @@ function StatsPage() {
           ))}
         </div>
 
+        {!device ? (
+          <div className="card-elev p-4 text-xs text-[var(--text-secondary)] text-center">
+            Aucun tracker associé à ce compte.
+          </div>
+        ) : !loading && !hasData ? (
+          <div className="card-elev p-4 text-xs text-[var(--text-secondary)] text-center">
+            Aucune donnée de télémétrie pour cette période.
+          </div>
+        ) : null}
+
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {KPIS.map((k) => (
             <div key={k.label} className="card-elev p-4">
               <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">{k.label}</div>
               <div className="text-2xl font-bold mono mt-1">{k.value}</div>
-              <div
-                className="text-[11px] mono mt-1 flex items-center gap-1"
-                style={{ color: k.up ? "var(--accent-green)" : "var(--accent-red)" }}
-              >
-                {k.up ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
-                {k.delta}
-              </div>
             </div>
           ))}
         </div>
@@ -81,26 +192,29 @@ function StatsPage() {
         <div className="card-elev p-6">
           <div className="grid md:grid-cols-[auto_1fr] gap-8 items-center">
             <div className="flex items-center gap-5">
-              <ScoreGauge score={78} />
+              <ScoreGauge score={stats.overallScore ?? 0} />
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
                   Score conducteur
                 </div>
-                <div className="text-4xl font-bold mono text-[var(--accent-violet)]">78<span className="text-base text-[var(--text-secondary)]">/100</span></div>
-                <div className="text-xs text-[var(--text-secondary)] mt-1">Bon conducteur</div>
+                <div className="text-4xl font-bold mono text-[var(--accent-violet)]">
+                  {stats.overallScore ?? "—"}
+                  {stats.overallScore !== null && <span className="text-base text-[var(--text-secondary)]">/100</span>}
+                </div>
+                <div className="text-xs text-[var(--text-secondary)] mt-1">{scoreLabel(stats.overallScore)}</div>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {SUBSCORES.map((s) => (
                 <div key={s.label}>
                   <div className="text-[10px] text-[var(--text-secondary)]">{s.label}</div>
-                  <div className="text-lg font-bold mono">{s.value}</div>
+                  <div className="text-lg font-bold mono">{s.value ?? "—"}{s.value !== null && "%"}</div>
                   <div className="h-1 bg-[var(--bg-elevated)] rounded-full mt-1 overflow-hidden">
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${s.value}%`,
-                        background: s.value > 80 ? "var(--accent-green)" : s.value > 60 ? "var(--accent-amber)" : "var(--accent-red)",
+                        width: `${s.value ?? 0}%`,
+                        background: (s.value ?? 0) > 80 ? "var(--accent-green)" : (s.value ?? 0) > 60 ? "var(--accent-amber)" : "var(--accent-red)",
                       }}
                     />
                   </div>
@@ -108,20 +222,17 @@ function StatsPage() {
               ))}
             </div>
           </div>
-          <div className="mt-6 p-3 rounded-md bg-[var(--accent-amber)]/10 border border-[var(--accent-amber)]/30 text-xs text-[var(--accent-amber)]">
-            ⚠ 3 freinages forts détectés mardi — vérifiez la distance de sécurité
-          </div>
         </div>
 
         {/* Charts */}
         <div className="grid md:grid-cols-2 gap-4">
           <div className="card-elev p-5">
             <h3 className="text-xs uppercase tracking-wider text-[var(--text-secondary)] font-semibold mb-4">
-              Distance par jour
+              Distance par jour (7 derniers jours)
             </h3>
             <div className="h-[200px]">
               <ResponsiveContainer>
-                <BarChart data={weekData}>
+                <BarChart data={stats.dailyDistance}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="day" stroke="var(--text-secondary)" fontSize={11} />
                   <YAxis stroke="var(--text-secondary)" fontSize={11} />
@@ -132,6 +243,7 @@ function StatsPage() {
                       borderRadius: 8,
                       fontSize: 12,
                     }}
+                    formatter={(v: number) => [`${v.toFixed(1)} km`, "Distance"]}
                   />
                   <Bar dataKey="km" fill="var(--accent-cyan)" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -145,7 +257,7 @@ function StatsPage() {
             </h3>
             <div className="h-[200px]">
               <ResponsiveContainer>
-                <LineChart data={speedData}>
+                <LineChart data={stats.hourlySpeed}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="h" stroke="var(--text-secondary)" fontSize={11} interval={3} />
                   <YAxis stroke="var(--text-secondary)" fontSize={11} />
@@ -156,6 +268,7 @@ function StatsPage() {
                       borderRadius: 8,
                       fontSize: 12,
                     }}
+                    formatter={(v: number) => [`${v.toFixed(0)} km/h`, "Vitesse moy."]}
                   />
                   <Line
                     type="monotone"

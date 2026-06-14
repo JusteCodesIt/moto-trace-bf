@@ -20,6 +20,9 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Docker (server-only secrets for local dev container)
+.env.docker
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

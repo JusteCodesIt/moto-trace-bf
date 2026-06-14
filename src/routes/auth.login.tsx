@@ -10,8 +10,8 @@ export const Route = createFileRoute("/auth/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("admin@gmail.com");
-  const [password, setPassword] = useState("admin2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,21 +22,6 @@ function LoginPage() {
     });
   }, [navigate]);
 
-  const signInOrProvision = async (mail: string, pwd: string) => {
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
-    if (!signInError) return;
-    // Account doesn't exist yet → create then sign in.
-    const msg = signInError.message?.toLowerCase() ?? "";
-    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
-      const { error: signUpError } = await supabase.auth.signUp({ email: mail, password: pwd });
-      if (signUpError && !signUpError.message?.toLowerCase().includes("already")) throw signUpError;
-      const { error: retryError } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
-      if (retryError) throw retryError;
-      return;
-    }
-    throw signInError;
-  };
-
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setError(null);
@@ -45,18 +30,8 @@ function LoginPage() {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
       }
-      await signInOrProvision(email, password);
-      navigate({ to: "/", replace: true });
-    } catch (err: any) {
-      setError(err?.message ?? "Erreur de connexion");
-    } finally { setLoading(false); }
-  };
-
-  const quickAdmin = async () => {
-    setLoading(true); setError(null);
-    try {
-      setEmail("admin@gmail.com"); setPassword("admin2026");
-      await signInOrProvision("admin@gmail.com", "admin2026");
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       navigate({ to: "/", replace: true });
     } catch (err: any) {
       setError(err?.message ?? "Erreur de connexion");
@@ -79,7 +54,7 @@ function LoginPage() {
             Suivi GPS temps réel,<br />pour votre moto.
           </h2>
           <p className="text-sm text-[var(--text-secondary)] max-w-sm">
-            ESP32-S3 · MAX-M8Q · SIM7600G 4G · HMAC-SHA256.
+            ESP32-S3 · SIM7080G 4G/LTE · GPS NEO-6M de secours · HMAC-SHA256.
             Vos trames télémétriques arrivent en direct dans cette interface.
           </p>
         </div>
@@ -125,13 +100,6 @@ function LoginPage() {
             className="w-full h-11 rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-60"
           >
             {loading ? "…" : mode === "signin" ? "Se connecter" : "Créer le compte"}
-          </button>
-
-          <button
-            type="button" onClick={quickAdmin} disabled={loading}
-            className="w-full h-10 rounded-md border border-[var(--border-active)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-primary)] transition-colors"
-          >
-            Connexion admin (admin@gmail.com)
           </button>
 
           <button

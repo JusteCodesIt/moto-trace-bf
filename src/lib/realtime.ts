@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "./store";
+import { deriveTrips } from "./trip-path";
+
+// Fenêtre d'historique utilisée pour reconstituer les trajets récents
+const TRIP_HISTORY_HOURS = 48;
 
 let started = false;
 let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -8,16 +12,19 @@ export async function startRealtime(deviceId: string) {
   if (started) return;
   started = true;
 
-  // Initial loads
-  const [{ data: lastT }, { data: zones }, { data: alerts }, { data: dev }] = await Promise.all([
+  // Initial loads — fired together so the dashboard isn't blocked behind
+  // several sequential round-trips.
+  const since = new Date(Date.now() - TRIP_HISTORY_HOURS * 3600_000).toISOString();
+  const [{ data: lastT }, { data: zones }, { data: alerts }, { data: dev }, { data: trail }, { data: history }] = await Promise.all([
     supabase.from("telemetry").select("*").eq("device_id", deviceId).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("geofences").select("*").eq("device_id", deviceId),
     supabase.from("alerts").select("*").eq("device_id", deviceId).order("created_at", { ascending: false }).limit(100),
     supabase.from("devices").select("*").eq("id", deviceId).maybeSingle(),
+    supabase.from("telemetry").select("lat,lng").eq("device_id", deviceId)
+      .order("recorded_at", { ascending: false }).limit(100),
+    supabase.from("telemetry").select("lat,lng,speed_kmh,heading,engine_on,recorded_at").eq("device_id", deviceId)
+      .gte("recorded_at", since).order("recorded_at", { ascending: true }).limit(5000),
   ]);
-  const { data: trail } = await supabase
-    .from("telemetry").select("lat,lng").eq("device_id", deviceId)
-    .order("recorded_at", { ascending: false }).limit(100);
 
   const s = useApp.getState();
   if (lastT) s.setTelemetry(rowToTelemetry(lastT));
@@ -25,6 +32,7 @@ export async function startRealtime(deviceId: string) {
   if (trail) s.setTrail(trail.reverse().map((r: any) => ({ lat: r.lat, lng: r.lng })));
   if (zones) s.setZones(zones.map(rowToZone));
   if (alerts) s.setAlerts(alerts.map(rowToAlert));
+  if (history) s.setTrips(deriveTrips(history, dev?.is_online ?? false));
 
   // Realtime
   channel = supabase
@@ -61,6 +69,7 @@ function rowToTelemetry(r: any) {
     lat: r.lat, lng: r.lng,
     speed: r.speed_kmh ?? 0, heading: r.heading ?? 0,
     altitude: r.altitude ?? 0, satellites: r.satellites ?? 0, hdop: r.hdop ?? 0,
+    gpsSource: r.gps_source ?? null,
     batteryMain: r.battery_main ?? 0, batteryBackup: r.battery_backup ?? 0,
     gsmBars: r.gsm_bars ?? 0, gsmCarrier: r.gsm_carrier ?? "—",
     engineOn: !!r.engine_on,
