@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Satellite,
   SignalHigh,
@@ -20,7 +20,9 @@ import {
   X,
 } from "lucide-react";
 import { useApp, type GpsSource } from "@/lib/store";
+import { useMultiDevice, startMultiDeviceMap, stopMultiDeviceMap } from "@/lib/multi-device";
 import { MapCanvas } from "./MapCanvas";
+import { VehicleHoverCard } from "./VehicleHoverCard";
 import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { notify } from "./ConfirmDialog";
@@ -56,6 +58,7 @@ function shockStatus(accel: { x: number; y: number; z: number }) {
 
 export function Dashboard() {
   const {
+    device,
     vehicleName,
     telemetry,
     hasTelemetry,
@@ -71,6 +74,38 @@ export function Dashboard() {
     unreadAlerts,
     zones,
   } = useApp();
+
+  // ── Multi-device map layer ──
+  const { devices } = useMultiDevice();
+  useEffect(() => {
+    startMultiDeviceMap();
+    return () => { stopMultiDeviceMap(); };
+  }, []);
+
+  const primaryId = device?.id;
+
+  // All devices except the primary (which already has its own dedicated marker)
+  const extraVehicles = useMemo(
+    () => Object.values(devices).filter((d) => d.id !== primaryId),
+    [devices, primaryId],
+  );
+
+  // Hover card state — small debounce prevents flicker when cursor crosses marker bounds
+  const [hoveredDeviceId, setHoveredDeviceId] = useState<string | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleVehicleHover = useCallback((deviceId: string | null) => {
+    if (deviceId !== null) {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      setHoveredDeviceId(deviceId);
+    } else {
+      hideTimerRef.current = setTimeout(() => setHoveredDeviceId(null), 120);
+    }
+  }, []);
+
+  // Resolve hover card data — reads primary from multi-device store too so all
+  // markers (primary + secondary) show the same card format
+  const hoveredVehicle = hoveredDeviceId ? (devices[hoveredDeviceId] ?? null) : null;
 
   const [recenterTick, setRecenterTick] = useState(0);
   const [measuring, setMeasuring] = useState(false);
@@ -113,7 +148,13 @@ export function Dashboard() {
             tone: "info",
           })
         }
+        extraVehicles={extraVehicles}
+        primaryVehicleId={primaryId}
+        onVehicleHover={handleVehicleHover}
       />
+
+      {/* ─── VEHICLE HOVER CARD (top-right, pointer-events-none) ─── */}
+      <VehicleHoverCard vehicle={hoveredVehicle} />
 
       {/* ─── TOP BAR ─── */}
       <div className="absolute top-3 left-3 right-3 md:left-4 md:right-4 z-20 flex items-center justify-between gap-3 pointer-events-none">

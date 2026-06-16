@@ -1,7 +1,8 @@
 /// <reference types="google.maps" />
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTheme } from "@/lib/theme";
 import vehicleAsset from "@/assets/vehicle-jmc.png.asset.json";
+import type { LiveDevice } from "@/lib/multi-device";
 
 
 interface LatLng { lat: number; lng: number }
@@ -44,6 +45,16 @@ interface Props {
   editingZone?: GeoZone | null;
   /** Click on the map to pick a coordinate. */
   onMapClick?: (lat: number, lng: number) => void;
+
+  /** Additional vehicles to show as secondary markers on the map. */
+  extraVehicles?: Pick<LiveDevice, "id" | "lat" | "lng" | "name" | "engineOn" | "speed">[];
+  /**
+   * Device ID of the primary vehicle (the one controlled by `center`/`heading`).
+   * When provided, hovering the primary marker also triggers `onVehicleHover`.
+   */
+  primaryVehicleId?: string;
+  /** Called with a deviceId on marker mouseover, null on mouseout. */
+  onVehicleHover?: (deviceId: string | null) => void;
 }
 
 const DARK_STYLE: google.maps.MapTypeStyle[] = [
@@ -94,6 +105,15 @@ function pinSvg(color: string, label: string) {
 
 const VEHICLE_ICON = vehicleAsset.url;
 
+/** Teardrop SVG pin for secondary vehicles — shows initial + engine-status color. */
+function vehiclePinUrl(name: string, engineOn: boolean): string {
+  const color = engineOn ? "#10F58F" : "#FF3B30";
+  const letter = (name.charAt(0) || "?").toUpperCase();
+  return `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><path d="M18 1C9 1 2 8 2 17c0 12.5 16 26 16 26S34 29.5 34 17C34 8 27 1 18 1z" fill="${color}" stroke="#07080F" stroke-width="1.5"/><circle cx="18" cy="17" r="6.5" fill="#07080F" fill-opacity="0.45"/><text x="18" y="21.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">${letter}</text></svg>`,
+  )}`;
+}
+
 
 export function MapCanvas({
   center,
@@ -114,6 +134,9 @@ export function MapCanvas({
   zones,
   editingZone,
   onMapClick,
+  extraVehicles,
+  primaryVehicleId,
+  onVehicleHover,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -130,6 +153,15 @@ export function MapCanvas({
   }>({ pts: [], line: null, markers: [] });
   const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
   const fittedRef = useRef(false);
+
+  // Extra-vehicle markers — keyed by device ID for efficient diffing
+  const extraMarkersRef = useRef<Map<string, google.maps.Marker>>(new Map());
+  // Listeners on the primary marker for hover events
+  const primaryHoverListenersRef = useRef<google.maps.MapsEventListener[]>([]);
+  // Stable ref so marker listeners always call the latest onVehicleHover
+  const onVehicleHoverRef = useRef(onVehicleHover);
+  useLayoutEffect(() => { onVehicleHoverRef.current = onVehicleHover; });
+
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { theme } = useTheme();
@@ -185,6 +217,12 @@ export function MapCanvas({
       measureRef.current = { pts: [], line: null, markers: [] };
       clickListenerRef.current?.remove();
       clickListenerRef.current = null;
+      // Extra-vehicle markers cleanup
+      extraMarkersRef.current.forEach((m) => m.setMap(null));
+      extraMarkersRef.current.clear();
+      // Primary hover listeners cleanup
+      primaryHoverListenersRef.current.forEach((l) => l.remove());
+      primaryHoverListenersRef.current = [];
       markerRef.current?.setMap(null);
       trailRef.current?.setMap(null);
       fullPathRef.current?.setMap(null);
@@ -392,6 +430,72 @@ export function MapCanvas({
     });
     return () => clickListenerRef.current?.remove();
   }, [ready, measuring, onMapClick, onMeasure]);
+
+  // ── Hover listeners on the primary vehicle marker ──
+  useEffect(() => {
+    if (!ready || !markerRef.current || !primaryVehicleId) return;
+    const devId = primaryVehicleId;
+    primaryHoverListenersRef.current.forEach((l) => l.remove());
+    primaryHoverListenersRef.current = [
+      markerRef.current.addListener("mouseover", () => onVehicleHoverRef.current?.(devId)),
+      markerRef.current.addListener("mouseout",  () => onVehicleHoverRef.current?.(null)),
+    ];
+    return () => {
+      primaryHoverListenersRef.current.forEach((l) => l.remove());
+      primaryHoverListenersRef.current = [];
+    };
+  }, [ready, primaryVehicleId]);
+
+  // ── Secondary vehicle markers — diff update on each position change ──
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    const g = (window as any).google as typeof google;
+    const seen = new Set<string>();
+
+    for (const v of (extraVehicles ?? [])) {
+      seen.add(v.id);
+      const pos = { lat: v.lat, lng: v.lng };
+      const existing = extraMarkersRef.current.get(v.id);
+      if (existing) {
+        // Only update position and icon color — no marker recreation
+        existing.setPosition(pos);
+        existing.setIcon({
+          url: vehiclePinUrl(v.name, v.engineOn),
+          scaledSize: new g.maps.Size(36, 44),
+          anchor: new g.maps.Point(18, 44),
+        });
+      } else {
+        const devId = v.id;
+        const marker = new g.maps.Marker({
+          position: pos,
+          map: mapRef.current!,
+          icon: {
+            url: vehiclePinUrl(v.name, v.engineOn),
+            scaledSize: new g.maps.Size(36, 44),
+            anchor: new g.maps.Point(18, 44),
+          },
+          // optimized:true → Google Maps composite les marqueurs sur un canvas
+          // WebGL unique au lieu de créer un DOM node par marqueur.
+          // Indispensable pour 100+ marqueurs simultanés sans dégradation.
+          optimized: true,
+          zIndex: 998,
+          title: v.name,
+        });
+        // devId is stable (UUID) — safe to capture in closure
+        marker.addListener("mouseover", () => onVehicleHoverRef.current?.(devId));
+        marker.addListener("mouseout",  () => onVehicleHoverRef.current?.(null));
+        extraMarkersRef.current.set(v.id, marker);
+      }
+    }
+
+    // Remove stale markers (device removed or filtered out)
+    for (const [id, marker] of extraMarkersRef.current) {
+      if (!seen.has(id)) {
+        marker.setMap(null);
+        extraMarkersRef.current.delete(id);
+      }
+    }
+  }, [extraVehicles, ready]);
 
   return (
     <div className={className ?? "absolute inset-0"}>
