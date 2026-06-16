@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTheme } from "@/lib/theme";
 import vehicleAsset from "@/assets/vehicle-jmc.png.asset.json";
 import type { LiveDevice } from "@/lib/multi-device";
+import { vehicleMarkerUrl } from "@/lib/vehicle-types";
 
 
 interface LatLng { lat: number; lng: number }
@@ -47,7 +48,7 @@ interface Props {
   onMapClick?: (lat: number, lng: number) => void;
 
   /** Additional vehicles to show as secondary markers on the map. */
-  extraVehicles?: Pick<LiveDevice, "id" | "lat" | "lng" | "name" | "engineOn" | "speed">[];
+  extraVehicles?: Array<Pick<LiveDevice, "id" | "lat" | "lng" | "name" | "engineOn" | "speed"> & { vehicleType?: string | null }>;
   /**
    * Device ID of the primary vehicle (the one controlled by `center`/`heading`).
    * When provided, hovering the primary marker also triggers `onVehicleHover`.
@@ -105,14 +106,6 @@ function pinSvg(color: string, label: string) {
 
 const VEHICLE_ICON = vehicleAsset.url;
 
-/** Teardrop SVG pin for secondary vehicles — shows initial + engine-status color. */
-function vehiclePinUrl(name: string, engineOn: boolean): string {
-  const color = engineOn ? "#10F58F" : "#FF3B30";
-  const letter = (name.charAt(0) || "?").toUpperCase();
-  return `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44"><path d="M18 1C9 1 2 8 2 17c0 12.5 16 26 16 26S34 29.5 34 17C34 8 27 1 18 1z" fill="${color}" stroke="#07080F" stroke-width="1.5"/><circle cx="18" cy="17" r="6.5" fill="#07080F" fill-opacity="0.45"/><text x="18" y="21.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">${letter}</text></svg>`,
-  )}`;
-}
 
 
 export function MapCanvas({
@@ -460,9 +453,9 @@ export function MapCanvas({
         // Only update position and icon color — no marker recreation
         existing.setPosition(pos);
         existing.setIcon({
-          url: vehiclePinUrl(v.name, v.engineOn),
-          scaledSize: new g.maps.Size(36, 44),
-          anchor: new g.maps.Point(18, 44),
+          url: vehicleMarkerUrl(v.vehicleType, v.engineOn, v.name),
+          scaledSize: new g.maps.Size(44, 52),
+          anchor: new g.maps.Point(22, 52),
         });
       } else {
         const devId = v.id;
@@ -470,9 +463,9 @@ export function MapCanvas({
           position: pos,
           map: mapRef.current!,
           icon: {
-            url: vehiclePinUrl(v.name, v.engineOn),
-            scaledSize: new g.maps.Size(36, 44),
-            anchor: new g.maps.Point(18, 44),
+            url: vehicleMarkerUrl(v.vehicleType, v.engineOn, v.name),
+            scaledSize: new g.maps.Size(44, 52),
+            anchor: new g.maps.Point(22, 52),
           },
           // optimized:true → Google Maps composite les marqueurs sur un canvas
           // WebGL unique au lieu de créer un DOM node par marqueur.

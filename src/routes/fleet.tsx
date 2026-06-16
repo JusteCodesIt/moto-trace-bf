@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Truck, ChevronLeft, Copy, Check, RefreshCw,
-  Trash2, Radio, AlertCircle, Loader2, Key,
+  Trash2, Radio, AlertCircle, Loader2, Key, ChevronRight,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { SectionHero } from "@/components/SectionHero";
@@ -11,7 +11,13 @@ import illusSettings from "@/assets/illus-settings.png";
 import {
   listMyDevices, createDevice, deleteDevice,
   getDeviceCredentials, rotateDeviceKey,
+  type DeviceRow,
 } from "@/lib/devices.functions";
+import {
+  VEHICLE_CATEGORIES, VEHICLE_TYPES,
+  getTypeByCode, getCategoryColor,
+  type VehicleCategory,
+} from "@/lib/vehicle-types";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/fleet")({
@@ -21,26 +27,17 @@ export const Route = createFileRoute("/fleet")({
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Device {
-  id: string;
-  name: string;
-  plate: string | null;
-  firmware: string | null;
-  pairing_code: string | null;
-  last_seen_at: string | null;
-  is_online: boolean;
-  created_at?: string;
-}
+type Device = DeviceRow;
 
 interface Credentials {
-  device: Pick<Device, "id" | "name" | "plate" | "firmware" | "last_seen_at" | "is_online">;
+  device: Device;
   hmacSecret: string | null;
   keyRotatedAt: string | null;
   ingestUrl: string;
 }
 
 type View = "list" | "detail";
-type AddStep = 1 | 2;
+type AddStep = 1 | 2 | 3 | 4;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -63,20 +60,39 @@ function maskSecret(s: string): string {
 
 function StatusDot({ online }: { online: boolean }) {
   return (
-    <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${online ? "bg-green-500" : "bg-[var(--border-active)]"}`} />
+    <span
+      className={`inline-block w-2 h-2 rounded-full shrink-0 ${online ? "bg-green-500" : "bg-[var(--border-active)]"}`}
+    />
   );
 }
 
-function Badge({ online, flashed }: { online: boolean; flashed: boolean }) {
+function FleetBadge({ online, flashed }: { online: boolean; flashed: boolean }) {
   return (
     <div className="flex gap-1.5 items-center">
-      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${online ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}>
+      <span
+        className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${online ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}
+      >
         {online ? "En ligne" : "Hors ligne"}
       </span>
-      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${flashed ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}>
+      <span
+        className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${flashed ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}
+      >
         {flashed ? "Flashé" : "Non flashé"}
       </span>
     </div>
+  );
+}
+
+function TypeBadge({ vehicleType }: { vehicleType: string | null }) {
+  const type = getTypeByCode(vehicleType);
+  const color = type ? getCategoryColor(type.category) : "#6b7280";
+  return (
+    <span
+      className="inline-flex items-center justify-center text-[10px] font-bold font-mono px-1.5 py-0.5 rounded"
+      style={{ background: `${color}22`, color }}
+    >
+      {vehicleType ?? "—"}
+    </span>
   );
 }
 
@@ -89,7 +105,9 @@ function CopyRow({ label, value, mask }: { label: string; value: string; mask?: 
   };
   return (
     <div className="flex items-center gap-2 p-2.5 rounded-lg bg-[var(--bg-elevated)]">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] w-24 shrink-0">{label}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] w-24 shrink-0">
+        {label}
+      </span>
       <span className="flex-1 font-mono text-[11px] text-[var(--text-primary)] truncate">
         {mask ? maskSecret(value) : value}
       </span>
@@ -104,7 +122,7 @@ function CopyRow({ label, value, mask }: { label: string; value: string; mask?: 
   );
 }
 
-// ── Modal Ajout ───────────────────────────────────────────────────────────────
+// ── Modal Ajout (3 étapes + credentials) ─────────────────────────────────────
 
 function AddModal({
   onClose,
@@ -114,26 +132,44 @@ function AddModal({
   onAdded: (d: Device) => void;
 }) {
   const [step, setStep] = useState<AddStep>(1);
-  const [name, setName] = useState("");
-  const [plate, setPlate] = useState("");
+  const [selCat, setSelCat] = useState<VehicleCategory | null>(null);
+  const [selType, setSelType] = useState<string | null>(null);
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [vehicleYear, setVehicleYear] = useState("");
+  const [label, setLabel] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ device: Device; hmacSecret: string; ingestUrl: string } | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
+  const [result, setResult] = useState<{
+    device: Device;
+    hmacSecret: string;
+    ingestUrl: string;
+  } | null>(null);
 
-  useEffect(() => { nameRef.current?.focus(); }, []);
-
-  const ingestFull = typeof window !== "undefined"
-    ? `${window.location.origin}/api/public/ingest`
-    : "/api/public/ingest";
+  const ingestFull =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/public/ingest`
+      : "/api/public/ingest";
 
   const handleCreate = async () => {
-    if (!name.trim()) { nameRef.current?.focus(); return; }
+    if (!selType || !selCat) return;
     setLoading(true);
     try {
-      const res = await createDevice({ data: { name: name.trim(), plate: plate.trim() || undefined } });
-      setResult({ device: res.device as Device, hmacSecret: res.hmacSecret!, ingestUrl: ingestFull });
+      const year = vehicleYear ? parseInt(vehicleYear, 10) : undefined;
+      const res = await createDevice({
+        data: {
+          vehicleType:     selType,
+          vehicleCategory: selCat,
+          vehicleModel:    vehicleModel.trim() || undefined,
+          vehicleYear:     year && !isNaN(year) ? year : undefined,
+          label:           label.trim() || undefined,
+        },
+      });
+      setResult({
+        device:     res.device as Device,
+        hmacSecret: res.hmacSecret!,
+        ingestUrl:  ingestFull,
+      });
       onAdded(res.device as Device);
-      setStep(2);
+      setStep(4);
     } catch (e) {
       await notify({ title: "Erreur", description: String(e), tone: "danger" });
     } finally {
@@ -141,91 +177,248 @@ function AddModal({
     }
   };
 
+  const cats = Object.entries(VEHICLE_CATEGORIES) as [VehicleCategory, (typeof VEHICLE_CATEGORIES)[VehicleCategory]][];
+  const typesForCat = selCat ? VEHICLE_TYPES.filter((t) => t.category === selCat) : [];
+  const selectedType = getTypeByCode(selType);
+
+  const stepLabels = ["Catégorie", "Type", "Finaliser"];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-md p-6 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
 
-        {/* Stepper */}
-        <div className="flex items-center gap-3 mb-5">
-          {[1, 2].map((n) => (
-            <div key={n} className="flex items-center gap-2 flex-1 last:flex-none">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 ${step > n ? "bg-green-500 text-white" : step === n ? "bg-[var(--accent-primary)] text-[var(--accent-milk)]" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}>
-                {step > n ? <Check className="size-3.5" /> : n}
-              </div>
-              <span className="text-xs text-[var(--text-secondary)] hidden sm:block">
-                {n === 1 ? "Informations" : "Identifiants"}
-              </span>
-              {n < 2 && <div className="flex-1 h-px bg-[var(--border)]" />}
+          {/* Stepper (only for steps 1-3) */}
+          {step < 4 && (
+            <div className="flex items-center gap-2 mb-6">
+              {stepLabels.map((lbl, i) => {
+                const n = (i + 1) as AddStep;
+                const done = step > n;
+                const active = step === n;
+                return (
+                  <div key={n} className="flex items-center gap-2 flex-1 last:flex-none">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 ${done ? "bg-green-500 text-white" : active ? "bg-[var(--accent-primary)] text-[var(--accent-milk)]" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}
+                    >
+                      {done ? <Check className="size-3.5" /> : n}
+                    </div>
+                    <span className="text-xs text-[var(--text-secondary)] hidden sm:block">{lbl}</span>
+                    {i < 2 && <div className="flex-1 h-px bg-[var(--border)]" />}
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          )}
 
-        {step === 1 ? (
-          <>
-            <h2 className="text-base font-semibold mb-1">Nouvel engin</h2>
-            <p className="text-sm text-[var(--text-secondary)] mb-5">Donnez un nom à ce traceur et renseignez la plaque du véhicule.</p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Nom de l'engin *</label>
-                <input
-                  ref={nameRef}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  placeholder="ex: Camion Iveco 05"
-                  className="w-full h-10 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">Immatriculation</label>
-                <input
-                  value={plate}
-                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  placeholder="ex: BF-5522-A"
-                  className="w-full h-10 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm font-mono outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-6 justify-end">
-              <button onClick={onClose} className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors">
-                Annuler
-              </button>
-              <button onClick={handleCreate} disabled={loading} className="h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2">
-                {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-                Créer l'engin
-              </button>
-            </div>
-          </>
-        ) : result ? (
-          <>
-            <h2 className="text-base font-semibold mb-1">Flashez le firmware</h2>
-            <p className="text-sm text-[var(--text-secondary)] mb-4">
-              Copiez ces trois valeurs dans <code className="font-mono text-[11px] bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded">include/secrets.h</code> puis compilez et flashez le module ESP32-S3.
-            </p>
-
-            <div className="space-y-2">
-              <CopyRow label="DEVICE_ID"    value={result.device.id} />
-              <CopyRow label="HMAC_SECRET"  value={result.hmacSecret} mask />
-              <CopyRow label="INGEST_URL"   value={result.ingestUrl} />
-            </div>
-
-            <div className="flex items-start gap-2 mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-              <AlertCircle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                La clé HMAC ne sera plus affichée après fermeture. Vous pouvez la régénérer à tout moment depuis le détail de l'engin.
+          {/* ── Étape 1 : Catégorie ─────────────────────────────────── */}
+          {step === 1 && (
+            <>
+              <h2 className="text-base font-semibold mb-1">Quel type d'engin ?</h2>
+              <p className="text-sm text-[var(--text-secondary)] mb-5">
+                Sélectionnez la catégorie de votre équipement.
               </p>
-            </div>
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                {cats.map(([catId, cat]) => (
+                  <button
+                    key={catId}
+                    onClick={() => { setSelCat(catId); setSelType(null); }}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-colors ${selCat === catId ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/5" : "border-[var(--border)] hover:bg-[var(--bg-elevated)]"}`}
+                  >
+                    <span className="text-2xl">{cat.emoji}</span>
+                    <span className="text-[11px] font-medium leading-tight">{cat.label}</span>
+                    <span className="text-[10px] text-[var(--text-secondary)]">{cat.count} types</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setStep(2)}
+                  disabled={!selCat}
+                  className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  Choisir le type <ChevronRight className="size-4" />
+                </button>
+              </div>
+            </>
+          )}
 
-            <div className="flex justify-end mt-5">
-              <button onClick={onClose} className="h-9 px-5 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity">
-                Terminé
-              </button>
-            </div>
-          </>
-        ) : null}
+          {/* ── Étape 2 : Type ─────────────────────────────────────── */}
+          {step === 2 && selCat && (
+            <>
+              <h2 className="text-base font-semibold mb-1">
+                {VEHICLE_CATEGORIES[selCat].emoji} {VEHICLE_CATEGORIES[selCat].label}
+              </h2>
+              <p className="text-sm text-[var(--text-secondary)] mb-4">Choisissez le type précis d'engin.</p>
+              <div className="grid grid-cols-2 gap-2 mb-5">
+                {typesForCat.map((t) => {
+                  const color = getCategoryColor(t.category);
+                  const active = selType === t.code;
+                  return (
+                    <button
+                      key={t.code}
+                      onClick={() => setSelType(t.code)}
+                      className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-colors ${active ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/5" : "border-[var(--border)] hover:bg-[var(--bg-elevated)]"}`}
+                    >
+                      <span
+                        className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded shrink-0"
+                        style={{ background: `${color}22`, color }}
+                      >
+                        {t.code}
+                      </span>
+                      <span className="text-xs font-medium leading-tight">{t.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 justify-between">
+                <button
+                  onClick={() => setStep(1)}
+                  className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                >
+                  Retour
+                </button>
+                <button
+                  onClick={() => setStep(3)}
+                  disabled={!selType}
+                  className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  Finaliser <ChevronRight className="size-4" />
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ── Étape 3 : Détails optionnels ───────────────────────── */}
+          {step === 3 && selType && selCat && (
+            <>
+              {/* Prévisualisation de l'ID */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-elevated)] mb-5 border border-[var(--border)]">
+                <div>
+                  <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider font-semibold mb-0.5">
+                    Identifiant auto-généré
+                  </p>
+                  <p className="font-mono font-semibold text-base">
+                    FM-{selType}-
+                    <span className="text-[var(--text-secondary)]">###</span>
+                  </p>
+                </div>
+                <TypeBadge vehicleType={selType} />
+              </div>
+
+              <p className="text-sm text-[var(--text-secondary)] mb-4">
+                {selectedType?.name} ·{" "}
+                {VEHICLE_CATEGORIES[selCat].label} —{" "}
+                Informations complémentaires (toutes optionnelles)
+              </p>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-[1fr_100px] gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                      Marque / Modèle
+                    </label>
+                    <input
+                      value={vehicleModel}
+                      onChange={(e) => setVehicleModel(e.target.value)}
+                      placeholder="ex: CAT D6, Volvo L90"
+                      className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                      Année
+                    </label>
+                    <input
+                      value={vehicleYear}
+                      onChange={(e) => setVehicleYear(e.target.value)}
+                      type="number"
+                      placeholder="2019"
+                      min={1990}
+                      max={2030}
+                      className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                    Désignation personnalisée
+                  </label>
+                  <input
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder="ex: Pelle chantier Nord (laissez vide pour FM-BUL-001)"
+                    className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-between mt-5">
+                <button
+                  onClick={() => setStep(2)}
+                  className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                >
+                  Retour
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={loading}
+                  className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="size-4 animate-spin" /> : null}
+                  Créer l'engin
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ── Étape 4 : Credentials ──────────────────────────────── */}
+          {step === 4 && result && (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                  <Check className="size-4 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold leading-tight">{result.device.internal_id ?? result.device.name}</h2>
+                  <p className="text-xs text-[var(--text-secondary)]">Engin enregistré</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-[var(--text-secondary)] mb-4">
+                Copiez ces trois valeurs dans{" "}
+                <code className="font-mono text-[11px] bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded">
+                  include/secrets.h
+                </code>{" "}
+                puis compilez et flashez le module ESP32-S3.
+              </p>
+
+              <div className="space-y-2">
+                <CopyRow label="DEVICE_ID"   value={result.device.id} />
+                <CopyRow label="HMAC_SECRET" value={result.hmacSecret} mask />
+                <CopyRow label="INGEST_URL"  value={result.ingestUrl} />
+              </div>
+
+              <div className="flex items-start gap-2 mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <AlertCircle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                  La clé HMAC ne sera plus affichée après fermeture. Vous pouvez la régénérer depuis le détail de l'engin.
+                </p>
+              </div>
+
+              <div className="flex justify-end mt-5">
+                <button
+                  onClick={onClose}
+                  className="h-9 px-5 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity"
+                >
+                  Terminé
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -247,15 +440,19 @@ function DeviceDetail({
   const [rotating, setRotating] = useState(false);
   const [pinging, setPinging] = useState(false);
 
-  const ingestFull = typeof window !== "undefined"
-    ? `${window.location.origin}/api/public/ingest`
-    : "/api/public/ingest";
+  const ingestFull =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/public/ingest`
+      : "/api/public/ingest";
+
+  const type = getTypeByCode(device.vehicle_type);
+  const catColor = type ? getCategoryColor(type.category) : "#6b7280";
 
   const loadCreds = async () => {
     setLoadingCreds(true);
     try {
       const res = await getDeviceCredentials({ data: { deviceId: device.id } });
-      setCreds({ ...res, ingestUrl: ingestFull });
+      setCreds({ ...res, device: res.device as Device, ingestUrl: ingestFull });
     } catch {
       await notify({ title: "Impossible de charger les identifiants", tone: "danger" });
     } finally {
@@ -290,7 +487,9 @@ function DeviceDetail({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from("commands").insert({ device_id: device.id, kind: "ping", issued_by: user.id });
+      await supabase
+        .from("commands")
+        .insert({ device_id: device.id, kind: "ping", issued_by: user.id });
       await notify({ title: "Ping mis en file — réponse à la prochaine connexion", tone: "success" });
     } catch {
       await notify({ title: "Erreur", tone: "danger" });
@@ -301,7 +500,7 @@ function DeviceDetail({
 
   const handleDelete = async () => {
     const ok = await confirm({
-      title: `Supprimer « ${device.name} » ?`,
+      title: `Supprimer « ${device.internal_id ?? device.name} » ?`,
       description: "Toutes les télémétries et alertes liées seront également supprimées. Cette action est irréversible.",
       tone: "danger",
       confirmLabel: "Supprimer",
@@ -317,15 +516,25 @@ function DeviceDetail({
 
   return (
     <div className="p-4 md:p-8 pb-24 max-w-2xl mx-auto">
-      <button onClick={onBack} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] mb-5 transition-colors">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] mb-5 transition-colors"
+      >
         <ChevronLeft className="size-4" /> Retour à la flotte
       </button>
 
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
         <StatusDot online={device.is_online} />
-        <h1 className="text-xl font-semibold">{device.name}</h1>
-        {device.plate && <span className="font-mono text-sm text-[var(--text-secondary)]">{device.plate}</span>}
-        <Badge online={device.is_online} flashed={!!device.firmware} />
+        <h1 className="text-xl font-semibold">{device.internal_id ?? device.name}</h1>
+        {device.vehicle_type && (
+          <span
+            className="text-[11px] font-bold font-mono px-2 py-0.5 rounded"
+            style={{ background: `${catColor}22`, color: catColor }}
+          >
+            {device.vehicle_type}
+          </span>
+        )}
+        <FleetBadge online={device.is_online} flashed={!!device.firmware} />
       </div>
 
       {/* Infos */}
@@ -333,9 +542,12 @@ function DeviceDetail({
         <h3 className="text-sm font-semibold mb-3">Informations</h3>
         <div className="space-y-2 text-sm">
           {[
-            { k: "Firmware",       v: device.firmware || "—" },
+            { k: "Type",          v: type ? `${type.name} (${type.code})` : "—" },
+            { k: "Modèle",        v: device.vehicle_model || "—" },
+            { k: "Année",         v: device.vehicle_year ? String(device.vehicle_year) : "—" },
+            { k: "Firmware",      v: device.firmware || "—" },
             { k: "Dernière trame", v: relativeTime(device.last_seen_at) },
-            { k: "Device ID",      v: device.id },
+            { k: "Device ID",     v: device.id },
           ].map(({ k, v }) => (
             <div key={k} className="flex justify-between gap-4">
               <span className="text-[var(--text-secondary)]">{k}</span>
@@ -389,7 +601,8 @@ function DeviceDetail({
 
         <p className="mt-3 text-xs text-[var(--text-secondary)] leading-relaxed flex items-start gap-1.5">
           <Key className="size-3.5 shrink-0 mt-0.5" />
-          Ces valeurs doivent être compilées dans <code className="font-mono bg-[var(--bg-elevated)] px-1 rounded">include/secrets.h</code>. Le tracker signe chaque trame POST via HMAC-SHA256.
+          Ces valeurs doivent être compilées dans{" "}
+          <code className="font-mono bg-[var(--bg-elevated)] px-1 rounded">include/secrets.h</code>. Le tracker signe chaque trame POST via HMAC-SHA256.
         </p>
       </div>
     </div>
@@ -444,18 +657,24 @@ function FleetPage() {
           eyebrow="Gestion"
           icon={Truck}
           title="Ma flotte"
-          description={`${devices.length} engin${devices.length > 1 ? "s" : ""} enregistré${devices.length > 1 ? "s" : ""} — ${online} en ligne. Ajoutez, configurez et suivez chaque traceur de votre flotte.`}
+          description={`${devices.length} engin${devices.length !== 1 ? "s" : ""} enregistré${devices.length !== 1 ? "s" : ""} — ${online} en ligne. Chaque engin reçoit un identifiant automatique (FM-BUL-001…).`}
           image={illusSettings}
         />
 
         {/* Barre d'actions */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-3 text-sm text-[var(--text-secondary)]">
-            <span><strong className="text-[var(--text-primary)]">{devices.length}</strong> / 750 engins</span>
+            <span>
+              <strong className="text-[var(--text-primary)]">{devices.length}</strong> / 750 engins
+            </span>
             <span className="text-green-500 font-medium">{online} en ligne</span>
           </div>
           <div className="flex gap-2">
-            <button onClick={load} className="h-9 w-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors" title="Actualiser">
+            <button
+              onClick={load}
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+              title="Actualiser"
+            >
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
             </button>
             <button
@@ -470,9 +689,9 @@ function FleetPage() {
 
         {/* Liste */}
         <div className="border border-[var(--border)] rounded-xl overflow-hidden">
-          {/* En-tête */}
-          <div className="hidden md:grid grid-cols-[16px_1fr_120px_140px_100px] gap-3 px-4 py-2.5 bg-[var(--bg-elevated)] border-b border-[var(--border)] text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+          <div className="hidden md:grid grid-cols-[16px_60px_1fr_120px_140px_100px] gap-3 px-4 py-2.5 bg-[var(--bg-elevated)] border-b border-[var(--border)] text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             <div />
+            <div>Code</div>
             <div>Engin</div>
             <div>Statut</div>
             <div>Dernière trame</div>
@@ -487,7 +706,10 @@ function FleetPage() {
             <div className="flex flex-col items-center justify-center py-16 text-[var(--text-secondary)] gap-3">
               <Truck className="size-10 opacity-30" />
               <p className="text-sm">Aucun engin configuré</p>
-              <button onClick={() => setShowAdd(true)} className="text-xs text-[var(--accent-primary)] hover:underline">
+              <button
+                onClick={() => setShowAdd(true)}
+                className="text-xs text-[var(--accent-primary)] hover:underline"
+              >
                 Ajouter le premier engin →
               </button>
             </div>
@@ -496,22 +718,30 @@ function FleetPage() {
               <div
                 key={d.id}
                 onClick={() => { setSelected(d); setView("detail"); }}
-                className={`grid grid-cols-[16px_1fr_auto] md:grid-cols-[16px_1fr_120px_140px_100px] gap-3 px-4 py-3.5 items-center cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors ${i < devices.length - 1 ? "border-b border-[var(--border)]" : ""}`}
+                className={`grid grid-cols-[16px_1fr_auto] md:grid-cols-[16px_60px_1fr_120px_140px_100px] gap-3 px-4 py-3.5 items-center cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors ${i < devices.length - 1 ? "border-b border-[var(--border)]" : ""}`}
               >
                 <StatusDot online={d.is_online} />
-                <div>
-                  <div className="font-medium text-sm">{d.name}</div>
-                  <div className="text-xs font-mono text-[var(--text-secondary)] mt-0.5">{d.plate || "— plaque —"}</div>
+                <div className="hidden md:block">
+                  <TypeBadge vehicleType={d.vehicle_type} />
                 </div>
-                <Badge online={d.is_online} flashed={!!d.firmware} />
-                <div className="hidden md:block text-xs text-[var(--text-secondary)]">{relativeTime(d.last_seen_at)}</div>
-                <div className="hidden md:flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                <div>
+                  <div className="font-medium text-sm">{d.internal_id ?? d.name}</div>
+                  <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    {d.vehicle_model
+                      ? `${d.vehicle_model}${d.vehicle_year ? ` · ${d.vehicle_year}` : ""}`
+                      : getTypeByCode(d.vehicle_type)?.name ?? "—"}
+                  </div>
+                </div>
+                <FleetBadge online={d.is_online} flashed={!!d.firmware} />
+                <div className="hidden md:block text-xs text-[var(--text-secondary)]">
+                  {relativeTime(d.last_seen_at)}
+                </div>
+                <div
+                  className="hidden md:flex justify-end gap-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setSelected(d);
-                      setView("detail");
-                    }}
+                    onClick={() => { setSelected(d); setView("detail"); }}
                     className="h-7 w-7 flex items-center justify-center rounded border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
                     title="Voir les identifiants"
                   >
@@ -519,7 +749,12 @@ function FleetPage() {
                   </button>
                   <button
                     onClick={async () => {
-                      const ok = await confirm({ title: `Supprimer « ${d.name} » ?`, description: "Irréversible.", tone: "danger", confirmLabel: "Supprimer" });
+                      const ok = await confirm({
+                        title: `Supprimer « ${d.internal_id ?? d.name} » ?`,
+                        description: "Irréversible.",
+                        tone: "danger",
+                        confirmLabel: "Supprimer",
+                      });
                       if (ok) {
                         try {
                           await deleteDevice({ data: { deviceId: d.id } });

@@ -27,6 +27,7 @@ export interface LiveDevice {
   id:            string;
   name:          string;
   isOnline:      boolean;
+  vehicleType:   string | null;
   lat:           number;
   lng:           number;
   heading:       number;
@@ -57,28 +58,35 @@ export const useMultiDevice = create<MultiDeviceState>((set) => ({
 // ── Type de ligne retourné par get_fleet_positions() et device_positions ───
 
 interface FleetRow {
-  device_id:      string;
-  name?:          string | null;
-  is_online?:     boolean | null;
-  lat:            number;
-  lng:            number;
-  speed_kmh?:     number | null;
-  heading?:       number | null;
-  altitude?:      number | null;
-  engine_on?:     boolean | null;
-  battery_main?:  number | null;
+  device_id:       string;
+  name?:           string | null;
+  is_online?:      boolean | null;
+  vehicle_type?:   string | null;
+  lat:             number;
+  lng:             number;
+  speed_kmh?:      number | null;
+  heading?:        number | null;
+  altitude?:       number | null;
+  engine_on?:      boolean | null;
+  battery_main?:   number | null;
   battery_backup?: number | null;
-  gsm_bars?:      number | null;
-  gsm_carrier?:   string | null;
-  gps_source?:    string | null;
-  recorded_at:    string;
+  gsm_bars?:       number | null;
+  gsm_carrier?:    string | null;
+  gps_source?:     string | null;
+  recorded_at:     string;
 }
 
-function rowToDevice(row: FleetRow, prevName?: string, prevOnline?: boolean): LiveDevice {
+function rowToDevice(
+  row: FleetRow,
+  prevName?: string,
+  prevOnline?: boolean,
+  prevVehicleType?: string | null,
+): LiveDevice {
   return {
     id:            row.device_id,
     name:          row.name ?? prevName ?? row.device_id.slice(0, 8),
     isOnline:      row.is_online ?? prevOnline ?? false,
+    vehicleType:   row.vehicle_type ?? prevVehicleType ?? null,
     lat:           row.lat,
     lng:           row.lng,
     heading:       row.heading ?? 0,
@@ -147,7 +155,7 @@ export async function startMultiDeviceMap(): Promise<void> {
         if (!row?.device_id) return;
         const current = useMultiDevice.getState().devices;
         const prev = current[row.device_id];
-        pendingBatch[row.device_id] = rowToDevice(row, prev?.name, prev?.isOnline);
+        pendingBatch[row.device_id] = rowToDevice(row, prev?.name, prev?.isOnline, prev?.vehicleType);
         scheduleFlush();
       },
     )
