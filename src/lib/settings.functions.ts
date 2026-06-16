@@ -35,6 +35,17 @@ const SettingsSchema = z.object({
     wifiSsid: z.string().max(64).default(""),
     wifiPwdSaved: z.boolean().default(false),
   }).partial().default({}),
+  maintenance: z.record(
+    z.string(),
+    z.object({
+      conducteur:        z.string().max(80).default(""),
+      chantier:          z.string().max(80).default(""),
+      derniereRevision:  z.string().max(32).default(""),
+      prochainEntretien: z.string().max(32).default(""),
+      heuresMoteur:      z.number().min(0).max(999999).default(0),
+      notes:             z.string().max(500).default(""),
+    }).partial(),
+  ).default({}),
 }).partial();
 
 export type UserSettings = z.infer<typeof SettingsSchema>;

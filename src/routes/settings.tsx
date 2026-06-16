@@ -104,33 +104,109 @@ function NotifSection({ settings, save }: SectionProps) {
   const notif = settings.notif ?? {};
   const matrix = notif.matrix ?? {};
   const [smsPhone, setSmsPhone] = useState(notif.smsPhone ?? "+226 70 00 00 00");
+  const [pushStatus, setPushStatus] = useState<
+    "loading" | "subscribed" | "unsubscribed" | "denied" | "unsupported" | "vapid_missing"
+  >("loading");
+  const [pushWorking, setPushWorking] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { isPushSupported, hasVapidKey, getExistingSubscription } = await import(
+        "@/lib/push-notifications"
+      );
+      if (!isPushSupported()) { setPushStatus("unsupported"); return; }
+      if (!hasVapidKey()) { setPushStatus("vapid_missing"); return; }
+      if (Notification.permission === "denied") { setPushStatus("denied"); return; }
+      const sub = await getExistingSubscription();
+      setPushStatus(sub ? "subscribed" : "unsubscribed");
+    })();
+  }, []);
 
   const onTest = async () => {
     const ok = await confirm({
       title: "Envoyer une notification de test ?",
-      description: "Une notification sera affichée en local.",
+      description:
+        pushStatus === "subscribed"
+          ? "Une notification push sera affichée via le service worker."
+          : "Une notification locale sera affichée.",
       tone: "info",
       confirmLabel: "Envoyer",
     });
     if (!ok) return;
-    if ("Notification" in window) {
-      const perm = Notification.permission === "granted"
-        ? "granted"
-        : await Notification.requestPermission();
-      if (perm === "granted") {
-        new Notification("AutoTrack", { body: "Notification de test reçue." });
+    if (pushStatus === "subscribed" && "serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration("/sw.js").catch(() => null);
+      if (reg) {
+        await reg.showNotification("AutoTrack — Test", {
+          body: "Notification push fonctionnelle ✓",
+          icon: "/favicon.ico",
+          tag: "test",
+        });
+        await notify({ title: "Notification affichée", tone: "success" });
+        return;
       }
     }
-    await notify({ title: "Notification envoyée", tone: "success" });
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("AutoTrack", { body: "Notification de test reçue." });
+    }
+    await notify({ title: "Notification locale envoyée", tone: "success" });
   };
 
   const togglePush = async () => {
-    const enabled = !(notif.pushEnabled ?? true);
-    if (enabled && "Notification" in window && Notification.permission !== "granted") {
-      await Notification.requestPermission();
+    setPushWorking(true);
+    try {
+      const {
+        subscribePush,
+        unsubscribePush,
+        saveSubscriptionToDb,
+        deleteSubscriptionFromDb,
+      } = await import("@/lib/push-notifications");
+
+      if (pushStatus === "subscribed") {
+        const ok = await confirm({
+          title: "Désactiver les notifications push ?",
+          description: "Vous ne recevrez plus d'alertes de flotte sur cet appareil.",
+          tone: "warning",
+          confirmLabel: "Désactiver",
+        });
+        if (!ok) return;
+        await unsubscribePush();
+        await deleteSubscriptionFromDb();
+        await save({ notif: { ...notif, pushEnabled: false } });
+        setPushStatus("unsubscribed");
+        await notify({ title: "Notifications push désactivées", tone: "success" });
+      } else {
+        const { sub, error } = await subscribePush();
+        if (error === "vapid_manquant") {
+          await notify({
+            title: "Configuration manquante",
+            description:
+              "Clé VAPID absente. Exécutez : npx web-push generate-vapid-keys puis définissez VITE_VAPID_PUBLIC_KEY dans .env",
+            tone: "danger",
+          });
+          setPushStatus("vapid_missing");
+          return;
+        }
+        if (error === "permission_refusée") {
+          setPushStatus("denied");
+          await notify({
+            title: "Permission refusée",
+            description: "Autorisez les notifications dans les paramètres du navigateur.",
+            tone: "warning",
+          });
+          return;
+        }
+        if (!sub) {
+          await notify({ title: "Échec de l'abonnement", description: error ?? "", tone: "danger" });
+          return;
+        }
+        await saveSubscriptionToDb(sub);
+        await save({ notif: { ...notif, pushEnabled: true } });
+        setPushStatus("subscribed");
+        await notify({ title: "Notifications push activées sur cet appareil", tone: "success" });
+      }
+    } finally {
+      setPushWorking(false);
     }
-    await save({ notif: { ...notif, pushEnabled: enabled } });
-    await notify({ title: enabled ? "Notifications push activées" : "Notifications push désactivées", tone: "success" });
   };
 
   const onSaveSms = async () => {
@@ -144,25 +220,66 @@ function NotifSection({ settings, save }: SectionProps) {
     await save({ notif: { ...notif, matrix: updated } });
   };
 
+  const STATUS_META = {
+    loading:       { label: "Vérification…",            cls: "text-[var(--text-secondary)]" },
+    subscribed:    { label: "Actif sur cet appareil",   cls: "text-[var(--accent-green)]" },
+    unsubscribed:  { label: "Désactivé",                cls: "text-[var(--text-secondary)]" },
+    denied:        { label: "Bloqué par le navigateur", cls: "text-[var(--accent-amber)]" },
+    unsupported:   { label: "Non supporté",             cls: "text-[var(--text-secondary)]" },
+    vapid_missing: { label: "Configuration manquante",  cls: "text-[var(--accent-red)]" },
+  } as const;
+
   return (
     <>
       <Card title="Notifications push">
         <div className="flex items-center justify-between p-3 rounded-md bg-[var(--bg-elevated)] gap-3">
           <div>
             <div className="text-sm font-medium">Statut</div>
-            <div className={`text-xs mono ${(notif.pushEnabled ?? true) ? "text-[var(--accent-green)]" : "text-[var(--text-secondary)]"}`}>
-              {(notif.pushEnabled ?? true) ? "Activé" : "Désactivé"}
+            <div className={`text-xs mono ${STATUS_META[pushStatus].cls}`}>
+              {STATUS_META[pushStatus].label}
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={togglePush} className="h-8 px-3 text-xs rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border-active)]">
-              {(notif.pushEnabled ?? true) ? "Désactiver" : "Activer"}
+            <button
+              onClick={togglePush}
+              disabled={
+                pushWorking ||
+                pushStatus === "loading" ||
+                pushStatus === "unsupported" ||
+                pushStatus === "denied"
+              }
+              className="h-8 px-3 text-xs rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border-active)] disabled:opacity-40"
+            >
+              {pushWorking ? "…" : pushStatus === "subscribed" ? "Désactiver" : "Activer"}
             </button>
-            <button onClick={onTest} className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90">
+            <button
+              onClick={onTest}
+              disabled={pushStatus === "loading"}
+              className="h-8 px-3 text-xs rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 disabled:opacity-40"
+            >
               Tester
             </button>
           </div>
         </div>
+        {pushStatus === "vapid_missing" && (
+          <p className="mt-2 text-[11px] text-[var(--accent-amber)] leading-relaxed">
+            Générez les clés :{" "}
+            <code className="mono bg-[var(--bg-elevated)] px-1 rounded">
+              npx web-push generate-vapid-keys
+            </code>
+            {" "}puis définissez{" "}
+            <code className="mono bg-[var(--bg-elevated)] px-1 rounded">VITE_VAPID_PUBLIC_KEY</code>{" "}
+            dans <code className="mono bg-[var(--bg-elevated)] px-1 rounded">.env</code> et{" "}
+            <code className="mono bg-[var(--bg-elevated)] px-1 rounded">VAPID_PUBLIC_KEY</code> +{" "}
+            <code className="mono bg-[var(--bg-elevated)] px-1 rounded">VAPID_PRIVATE_KEY</code>{" "}
+            dans les secrets de l'Edge Function <code className="mono bg-[var(--bg-elevated)] px-1 rounded">send-push</code>.
+          </p>
+        )}
+        {pushStatus === "denied" && (
+          <p className="mt-2 text-[11px] text-[var(--accent-amber)] leading-relaxed">
+            Le navigateur a bloqué les notifications. Ouvrez les paramètres du site et autorisez les notifications, puis actualisez la page.
+          </p>
+        )}
       </Card>
 
       <Card title="Notifications SMS" action={

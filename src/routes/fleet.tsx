@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Plus, Truck, ChevronLeft, Copy, Check, RefreshCw,
   Trash2, Radio, AlertCircle, Loader2, Key, ChevronRight,
+  Wrench, Calendar, UserRound, MapPin, Fuel,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { SectionHero } from "@/components/SectionHero";
@@ -13,6 +14,7 @@ import {
   getDeviceCredentials, rotateDeviceKey,
   type DeviceRow,
 } from "@/lib/devices.functions";
+import { getMySettings, updateMySettings } from "@/lib/settings.functions";
 import {
   VEHICLE_CATEGORIES, VEHICLE_TYPES,
   getTypeByCode, getCategoryColor,
@@ -604,6 +606,124 @@ function DeviceDetail({
           Ces valeurs doivent être compilées dans{" "}
           <code className="font-mono bg-[var(--bg-elevated)] px-1 rounded">include/secrets.h</code>. Le tracker signe chaque trame POST via HMAC-SHA256.
         </p>
+      </div>
+
+      <MaintenanceCard device={device} />
+    </div>
+  );
+}
+
+// ── Maintenance & suivi opérationnel ─────────────────────────────────────────
+
+interface MaintRecord {
+  conducteur?:        string;
+  chantier?:          string;
+  derniereRevision?:  string;
+  prochainEntretien?: string;
+  heuresMoteur?:      number;
+  notes?:             string;
+}
+
+function MaintenanceCard({ device }: { device: Device }) {
+  const [saving, setSaving] = useState(false);
+  const [rec, setRec] = useState<MaintRecord>({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getMySettings().then((s) => {
+      const m = (s as any)?.maintenance ?? {};
+      setRec(m[device.id] ?? {});
+      setLoaded(true);
+    });
+  }, [device.id]);
+
+  const field = (
+    key: keyof MaintRecord,
+    label: string,
+    Icon: React.ElementType,
+    opts?: { type?: string; placeholder?: string },
+  ) => (
+    <div>
+      <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+        <Icon className="size-3" /> {label}
+      </label>
+      <input
+        type={opts?.type ?? "text"}
+        value={(rec[key] as string | number) ?? ""}
+        onChange={(e) =>
+          setRec((r) => ({
+            ...r,
+            [key]: opts?.type === "number" ? Number(e.target.value) : e.target.value,
+          }))
+        }
+        placeholder={opts?.placeholder ?? ""}
+        className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
+      />
+    </div>
+  );
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateMySettings({
+        data: { patch: { maintenance: { [device.id]: rec } } as any },
+      });
+      await notify({ title: "Fiche maintenance enregistrée", tone: "success" });
+    } catch {
+      await notify({ title: "Erreur", tone: "danger" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return null;
+
+  const nextDate = rec.prochainEntretien ? new Date(rec.prochainEntretien) : null;
+  const isOverdue = nextDate && nextDate < new Date();
+
+  return (
+    <div className="card-elev p-5 mt-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Wrench className="size-4 text-[var(--accent-amber)]" /> Maintenance & opérationnel
+        </h3>
+        {isOverdue && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">
+            Entretien en retard
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        {field("conducteur",        "Conducteur",          UserRound, { placeholder: "Nom du conducteur" })}
+        {field("chantier",          "Chantier / site",     MapPin,    { placeholder: "ex: RN1 Nord, Bobo-Dioulasso" })}
+        {field("derniereRevision",  "Dernière révision",   Calendar,  { type: "date" })}
+        {field("prochainEntretien", "Prochain entretien",  Calendar,  { type: "date" })}
+        {field("heuresMoteur",      "Heures moteur",       Fuel,      { type: "number", placeholder: "0" })}
+      </div>
+
+      <div>
+        <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+          <Wrench className="size-3" /> Notes techniques
+        </label>
+        <textarea
+          value={rec.notes ?? ""}
+          onChange={(e) => setRec((r) => ({ ...r, notes: e.target.value }))}
+          placeholder="Observations, pièces à changer, incidents…"
+          rows={3}
+          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)] resize-none"
+        />
+      </div>
+
+      <div className="flex justify-end mt-3">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+          Enregistrer la fiche
+        </button>
       </div>
     </div>
   );
