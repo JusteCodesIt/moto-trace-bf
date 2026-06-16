@@ -20,8 +20,8 @@ import { Route as TripsIdRouteImport } from './routes/trips.$id'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as AuthLoginRouteImport } from './routes/auth.login'
 import { Route as ApiPublicIngestRouteImport } from './routes/api/public/ingest'
-import { Route as ApiPublicShareTokenRouteImport } from './routes/api/public/share.$token'
 import { Route as ApiAdminSetupFleetRouteImport } from './routes/api/admin/setup-fleet'
+import { Route as ApiPublicShareTokenRouteImport } from './routes/api/public/share.$token'
 
 const TripsRoute = TripsRouteImport.update({
   id: '/trips',
@@ -78,14 +78,14 @@ const ApiPublicIngestRoute = ApiPublicIngestRouteImport.update({
   path: '/api/public/ingest',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicShareTokenRoute = ApiPublicShareTokenRouteImport.update({
-  id: '/api/public/share/$token',
-  path: '/api/public/share/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAdminSetupFleetRoute = ApiAdminSetupFleetRouteImport.update({
   id: '/api/admin/setup-fleet',
   path: '/api/admin/setup-fleet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicShareTokenRoute = ApiPublicShareTokenRouteImport.update({
+  id: '/api/public/share/$token',
+  path: '/api/public/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -100,9 +100,9 @@ export interface FileRoutesByFullPath {
   '/auth/login': typeof AuthLoginRoute
   '/share/$token': typeof ShareTokenRoute
   '/trips/$id': typeof TripsIdRoute
+  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/share/$token': typeof ApiPublicShareTokenRoute
-  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -115,9 +115,9 @@ export interface FileRoutesByTo {
   '/auth/login': typeof AuthLoginRoute
   '/share/$token': typeof ShareTokenRoute
   '/trips/$id': typeof TripsIdRoute
+  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/share/$token': typeof ApiPublicShareTokenRoute
-  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -131,8 +131,9 @@ export interface FileRoutesById {
   '/auth/login': typeof AuthLoginRoute
   '/share/$token': typeof ShareTokenRoute
   '/trips/$id': typeof TripsIdRoute
-  '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
+  '/api/public/ingest': typeof ApiPublicIngestRoute
+  '/api/public/share/$token': typeof ApiPublicShareTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,9 +148,9 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/share/$token'
     | '/trips/$id'
+    | '/api/admin/setup-fleet'
     | '/api/public/ingest'
     | '/api/public/share/$token'
-    | '/api/admin/setup-fleet'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -162,9 +163,9 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/share/$token'
     | '/trips/$id'
+    | '/api/admin/setup-fleet'
     | '/api/public/ingest'
     | '/api/public/share/$token'
-    | '/api/admin/setup-fleet'
   id:
     | '__root__'
     | '/'
@@ -177,9 +178,9 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/share/$token'
     | '/trips/$id'
+    | '/api/admin/setup-fleet'
     | '/api/public/ingest'
     | '/api/public/share/$token'
-    | '/api/admin/setup-fleet'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -192,9 +193,9 @@ export interface RootRouteChildren {
   TripsRoute: typeof TripsRouteWithChildren
   AuthLoginRoute: typeof AuthLoginRoute
   ShareTokenRoute: typeof ShareTokenRoute
+  ApiAdminSetupFleetRoute: typeof ApiAdminSetupFleetRoute
   ApiPublicIngestRoute: typeof ApiPublicIngestRoute
   ApiPublicShareTokenRoute: typeof ApiPublicShareTokenRoute
-  ApiAdminSetupFleetRoute: typeof ApiAdminSetupFleetRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -276,18 +277,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicIngestRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/share/$token': {
-      id: '/api/public/share/$token'
-      path: '/api/public/share/$token'
-      fullPath: '/api/public/share/$token'
-      preLoaderRoute: typeof ApiPublicShareTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/admin/setup-fleet': {
       id: '/api/admin/setup-fleet'
       path: '/api/admin/setup-fleet'
       fullPath: '/api/admin/setup-fleet'
       preLoaderRoute: typeof ApiAdminSetupFleetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/share/$token': {
+      id: '/api/public/share/$token'
+      path: '/api/public/share/$token'
+      fullPath: '/api/public/share/$token'
+      preLoaderRoute: typeof ApiPublicShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -313,9 +314,9 @@ const rootRouteChildren: RootRouteChildren = {
   TripsRoute: TripsRouteWithChildren,
   AuthLoginRoute: AuthLoginRoute,
   ShareTokenRoute: ShareTokenRoute,
+  ApiAdminSetupFleetRoute: ApiAdminSetupFleetRoute,
   ApiPublicIngestRoute: ApiPublicIngestRoute,
   ApiPublicShareTokenRoute: ApiPublicShareTokenRoute,
-  ApiAdminSetupFleetRoute: ApiAdminSetupFleetRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
