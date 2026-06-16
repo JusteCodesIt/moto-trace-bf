@@ -124,6 +124,7 @@ export interface FileRoutesById {
   '/share/$token': typeof ShareTokenRoute
   '/trips/$id': typeof TripsIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
+  '/api/public/share/$token': typeof ApiPublicShareTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath

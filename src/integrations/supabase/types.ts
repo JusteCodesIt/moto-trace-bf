@@ -229,6 +229,7 @@ export type Database = {
           created_by: string
           device_id: string
           expires_at: string
+          id: string
           token: string
         }
         Insert: {
@@ -236,6 +237,7 @@ export type Database = {
           created_by: string
           device_id: string
           expires_at: string
+          id?: string
           token: string
         }
         Update: {
@@ -243,6 +245,7 @@ export type Database = {
           created_by?: string
           device_id?: string
           expires_at?: string
+          id?: string
           token?: string
         }
         Relationships: [
