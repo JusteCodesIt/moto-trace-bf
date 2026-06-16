@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   MoreHorizontal,
+  Truck,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const items = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/fleet", label: "Flotte", icon: Truck },
   { to: "/trips", label: "Trajets", icon: Route },
   { to: "/alerts", label: "Alertes", icon: Bell, badge: true },
   { to: "/geofence", label: "Géozone", icon: MapPin },
