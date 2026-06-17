@@ -1,0 +1,53 @@
+{
+  "name": "AutoTrack — Initiative Faso Mêbo",
+  "short_name": "AutoTrack",
+  "description": "Suivi GPS 4G/LTE de la flotte d'engins de l'Initiative présidentielle Faso Mêbo : positions temps réel, géofences, alertes, fiche maintenance et scoring conducteur.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#1e5229",
+  "categories": ["productivity", "business", "utilities"],
+  "lang": "fr-BF",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32 64x64",
+      "type": "image/x-icon"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Carte temps réel",
+      "short_name": "Carte",
+      "description": "Voir tous les engins sur la carte",
+      "url": "/",
+      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+    },
+    {
+      "name": "Flotte",
+      "short_name": "Flotte",
+      "description": "Gérer les engins et leur maintenance",
+      "url": "/fleet",
+      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+    },
+    {
+      "name": "Alertes",
+      "short_name": "Alertes",
+      "description": "Journal des événements",
+      "url": "/alerts",
+      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+    },
+    {
+      "name": "Rapports",
+      "short_name": "Rapports",
+      "description": "Anomalies et scores conducteur",
+      "url": "/reports",
+      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+    }
+  ],
+  "prefer_related_applications": false
+}
