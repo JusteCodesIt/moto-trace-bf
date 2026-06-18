@@ -22,8 +22,8 @@ interface AlertRow {
   created_at: string;
 }
 
-interface DriverScoreRow {
-  driver_badge_id: string;
+interface EngineScoreRow {
+  device_id: string;
   period_start: string;
   period_end: string;
   score: number;
@@ -36,15 +36,16 @@ interface DriverScoreRow {
   overspeed_count: number;
 }
 
-interface BadgeRow {
-  badge_uid: string;
-  driver_name: string;
+interface DeviceRow {
+  id: string;
+  internal_id: string | null;
+  name: string;
 }
 
 function ReportsPage() {
   const [anomalies, setAnomalies] = useState<AlertRow[]>([]);
-  const [scores, setScores] = useState<DriverScoreRow[]>([]);
-  const [badgeNames, setBadgeNames] = useState<Map<string, string>>(new Map());
+  const [scores, setScores] = useState<EngineScoreRow[]>([]);
+  const [deviceNames, setDeviceNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<"7d" | "30d" | "90d">("30d");
 
@@ -57,7 +58,6 @@ function ReportsPage() {
       const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
       const since = new Date(Date.now() - days * 86400000).toISOString();
 
-      // Anomalies = alertes de kind "anomaly" + autres severity warning/critical
       const { data: alertRows } = await supabase
         .from("alerts")
         .select("id, device_id, kind, severity, title, message, created_at")
@@ -67,23 +67,23 @@ function ReportsPage() {
         .limit(200);
       setAnomalies((alertRows ?? []) as AlertRow[]);
 
-      // Scores
       const { data: scoreRows } = await (supabase as any)
-        .from("driver_scores")
+        .from("engine_scores")
         .select("*")
         .eq("owner_id", user.id)
         .gte("period_end", since.slice(0, 10))
         .order("period_end", { ascending: false });
-      setScores((scoreRows ?? []) as DriverScoreRow[]);
+      setScores((scoreRows ?? []) as EngineScoreRow[]);
 
-      // Noms des badges
-      const { data: badgeRows } = await (supabase as any)
-        .from("driver_badges")
-        .select("badge_uid, driver_name")
+      const { data: deviceRows } = await (supabase as any)
+        .from("devices")
+        .select("id, internal_id, name")
         .eq("owner_id", user.id);
       const map = new Map<string, string>();
-      for (const b of (badgeRows ?? []) as BadgeRow[]) map.set(b.badge_uid, b.driver_name);
-      setBadgeNames(map);
+      for (const d of (deviceRows ?? []) as DeviceRow[]) {
+        map.set(d.id, d.internal_id ?? d.name);
+      }
+      setDeviceNames(map);
     } catch {
       await notify({ title: "Erreur de chargement", tone: "danger" });
     } finally {
@@ -100,26 +100,26 @@ function ReportsPage() {
     return { critical, warning, avgScore };
   }, [anomalies, scores]);
 
-  // Top 5 conducteurs par score (moyenne sur la période)
-  const topDrivers = useMemo(() => {
-    const byBadge = new Map<string, { sum: number; n: number; km: number }>();
+  // Classement des engins par score moyen sur la période
+  const topEngines = useMemo(() => {
+    const byDevice = new Map<string, { sum: number; n: number; km: number }>();
     for (const s of scores) {
-      const cur = byBadge.get(s.driver_badge_id) ?? { sum: 0, n: 0, km: 0 };
+      const cur = byDevice.get(s.device_id) ?? { sum: 0, n: 0, km: 0 };
       cur.sum += s.score; cur.n += 1; cur.km += s.km_driven;
-      byBadge.set(s.driver_badge_id, cur);
+      byDevice.set(s.device_id, cur);
     }
-    return Array.from(byBadge.entries())
-      .map(([uid, v]) => ({ uid, name: badgeNames.get(uid) ?? uid, avg: Math.round(v.sum / v.n), km: v.km }))
+    return Array.from(byDevice.entries())
+      .map(([id, v]) => ({ id, name: deviceNames.get(id) ?? id, avg: Math.round(v.sum / v.n), km: v.km }))
       .sort((a, b) => b.avg - a.avg);
-  }, [scores, badgeNames]);
+  }, [scores, deviceNames]);
 
   const exportCsv = () => {
     const rows = [
-      ["Période", "Date début", "Date fin", "Conducteur", "Badge", "Score", "Km", "Chocs", "Freinages", "Accélérations", "Retournements", "Nuit (min)", "Excès vitesse"],
+      ["Période", "Date début", "Date fin", "Engin", "Device ID", "Score", "Km", "Chocs", "Freinages", "Accélérations", "Retournements", "Nuit (min)", "Excès vitesse"],
       ...scores.map((s) => [
         `${s.period_start} → ${s.period_end}`, s.period_start, s.period_end,
-        badgeNames.get(s.driver_badge_id) ?? "(inconnu)",
-        s.driver_badge_id, String(s.score), s.km_driven.toFixed(1),
+        deviceNames.get(s.device_id) ?? "(inconnu)",
+        s.device_id, String(s.score), s.km_driven.toFixed(1),
         String(s.shock_count), String(s.hard_brake_count), String(s.hard_accel_count),
         String(s.rollover_count), String(s.night_minutes), String(s.overspeed_count),
       ]),
@@ -140,7 +140,7 @@ function ReportsPage() {
           eyebrow="Analyse"
           icon={FileBarChart}
           title="Rapports automatisés"
-          description="Anomalies détectées par analyse statistique (Z-score modifié et IQR Tukey) et scores conducteur hebdomadaires. Tous les calculs sont exécutés par Edge Function sans intervention."
+          description="Anomalies détectées par analyse statistique (Z-score modifié et IQR Tukey) et scores d'usage par engin hebdomadaires. Tous les calculs sont exécutés par Edge Function sans intervention humaine."
           image={illusSettings}
         />
 
@@ -165,7 +165,6 @@ function ReportsPage() {
           </button>
         </div>
 
-        {/* KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
           <div className="card-elev p-4 flex items-start gap-3">
             <AlertTriangle className="size-5 text-red-500 shrink-0 mt-0.5" />
@@ -194,15 +193,14 @@ function ReportsPage() {
           </div>
         </div>
 
-        {/* Top conducteurs */}
-        {topDrivers.length > 0 && (
+        {topEngines.length > 0 && (
           <div className="card-elev p-5 mb-5">
-            <h3 className="text-sm font-semibold mb-3">Classement conducteurs</h3>
+            <h3 className="text-sm font-semibold mb-3">Classement des engins par score d'usage</h3>
             <div className="space-y-2">
-              {topDrivers.slice(0, 10).map((d, i) => (
-                <div key={d.uid} className="flex items-center gap-3">
+              {topEngines.slice(0, 10).map((d, i) => (
+                <div key={d.id} className="flex items-center gap-3">
                   <span className="text-[10px] font-mono text-[var(--text-secondary)] w-6">#{i + 1}</span>
-                  <span className="flex-1 text-sm">{d.name}</span>
+                  <span className="flex-1 text-sm font-mono">{d.name}</span>
                   <span className="text-xs text-[var(--text-secondary)] font-mono w-20 text-right">{d.km.toFixed(0)} km</span>
                   <div className="w-32 h-2 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
                     <div className="h-full" style={{
@@ -217,7 +215,6 @@ function ReportsPage() {
           </div>
         )}
 
-        {/* Liste des anomalies */}
         <div className="card-elev p-5">
           <h3 className="text-sm font-semibold mb-3">Anomalies récentes</h3>
           {loading ? (

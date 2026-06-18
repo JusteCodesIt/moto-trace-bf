@@ -82,7 +82,7 @@ $functions = @(
     @{ name = "send-push";                       verify_jwt = $false },
     @{ name = "daily-maintenance-reminders";     verify_jwt = $false },
     @{ name = "anomaly-detector";                verify_jwt = $false },
-    @{ name = "driver-score";                    verify_jwt = $false },
+    @{ name = "engine-score";                    verify_jwt = $false },
     @{ name = "webhooks-dispatch";               verify_jwt = $false },
     @{ name = "rotate-hmac-keys";                verify_jwt = $false },
     @{ name = "fleet-ws";                        verify_jwt = $true  }
@@ -156,11 +156,11 @@ SELECT cron.schedule(
   );`$`$
 );
 
--- Score conducteur hebdomadaire (lundi 05:00 UTC)
+-- Score d'usage par engin hebdomadaire (lundi 05:00 UTC)
 SELECT cron.schedule(
-  'driver-score', '0 5 * * 1',
+  'engine-score', '0 5 * * 1',
   `$`$SELECT net.http_post(
-    'https://$NewRef.supabase.co/functions/v1/driver-score',
+    'https://$NewRef.supabase.co/functions/v1/engine-score',
     '{}'::jsonb,
     jsonb_build_object('Authorization', 'Bearer $ServiceRoleKey')
   );`$`$

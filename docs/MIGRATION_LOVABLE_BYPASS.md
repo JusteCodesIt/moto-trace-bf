@@ -126,8 +126,8 @@ Cette commande applique automatiquement :
 - `000002_fleet_scale.sql` (device_positions + get_fleet_positions)
 - `000003_vehicle_types.sql` (FM-XXX-NNN sequences)
 - `000004_push_subscriptions.sql` (Web Push VAPID)
-- `000005_v3_extensions.sql` (J1939 + IMU + geofence_states + driver_badges)
-- `000006_v31_drivers_webhooks_graphql.sql` (driver_scores + webhooks + pg_graphql)
+- `000005_v3_extensions.sql` (J1939 + IMU + geofence_states + maintenance_reminders)
+- `000006_v31_drivers_webhooks_graphql.sql` (engine_scores + webhooks + pg_graphql + data_subject_requests)
 
 ### 4.4 Déployer les Edge Functions
 
@@ -135,7 +135,7 @@ Cette commande applique automatiquement :
 supabase functions deploy send-push                       --no-verify-jwt
 supabase functions deploy daily-maintenance-reminders     --no-verify-jwt
 supabase functions deploy anomaly-detector                --no-verify-jwt
-supabase functions deploy driver-score                    --no-verify-jwt
+supabase functions deploy engine-score                    --no-verify-jwt
 supabase functions deploy webhooks-dispatch               --no-verify-jwt
 supabase functions deploy rotate-hmac-keys                --no-verify-jwt
 supabase functions deploy fleet-ws
@@ -163,7 +163,7 @@ Dans **Database → Cron Jobs** (active l'extension `pg_cron` si demandé) :
 | `0 4 * * *`   | `https://<NEW_REF>.supabase.co/functions/v1/rotate-hmac-keys`            | Rotation HMAC > 90 j |
 | `0 6 * * *`   | `https://<NEW_REF>.supabase.co/functions/v1/daily-maintenance-reminders` | Rappels J-7 et J-1 |
 | `0 7 * * *`   | `https://<NEW_REF>.supabase.co/functions/v1/anomaly-detector`            | Détection anomalies |
-| `0 5 * * 1`   | `https://<NEW_REF>.supabase.co/functions/v1/driver-score`                | Score hebdo lundi |
+| `0 5 * * 1`   | `https://<NEW_REF>.supabase.co/functions/v1/engine-score`                | Score d'usage par engin hebdo lundi |
 | `*/2 * * * *` | `https://<NEW_REF>.supabase.co/functions/v1/webhooks-dispatch`           | Webhooks toutes 2 min |
 
 Le SQL pour créer un cron job est :

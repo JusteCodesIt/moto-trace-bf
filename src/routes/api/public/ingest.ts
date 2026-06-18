@@ -48,8 +48,6 @@ const Schema = z.object({
   brake_count: z.number().int().min(0).max(255).nullish(),
   accel_count: z.number().int().min(0).max(255).nullish(),
   rollover_count: z.number().int().min(0).max(255).nullish(),
-  // v3.0 : RFID MIFARE badge UID (hex, 4-14 bytes ISO 14443A)
-  driver_badge_id: z.string().regex(/^[0-9A-Fa-f]{8,28}$/).nullish(),
   events: z.array(z.object({
     kind: z.string().max(40),
     severity: z.enum(["critical", "warning", "info"]),
@@ -180,7 +178,6 @@ export const Route = createFileRoute("/api/public/ingest")({
           brake_count:       parsed.brake_count        ?? null,
           accel_count:       parsed.accel_count        ?? null,
           rollover_count:    parsed.rollover_count     ?? null,
-          driver_badge_id:   parsed.driver_badge_id    ?? null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           raw: parsed as any,
         });

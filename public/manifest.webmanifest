@@ -1,7 +1,7 @@
 {
   "name": "AutoTrack — Initiative Faso Mêbo",
   "short_name": "AutoTrack",
-  "description": "Suivi GPS 4G/LTE de la flotte d'engins de l'Initiative présidentielle Faso Mêbo : positions temps réel, géofences, alertes, fiche maintenance et scoring conducteur.",
+  "description": "Suivi GPS 4G/LTE de la flotte d'engins de l'Initiative présidentielle Faso Mêbo : positions temps réel, géofences, alertes, fiche maintenance et scoring d'usage par engin.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

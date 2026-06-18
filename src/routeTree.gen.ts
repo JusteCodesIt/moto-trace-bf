@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as FleetRouteImport } from './routes/fleet'
-import { Route as DriversRouteImport } from './routes/drivers'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as TripsRouteImport } from './routes/trips'
 import { Route as StatsRouteImport } from './routes/stats'
@@ -29,11 +28,6 @@ import { Route as ApiAdminSetupFleetRouteImport } from './routes/api/admin/setup
 const FleetRoute = FleetRouteImport.update({
   id: '/fleet',
   path: '/fleet',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DriversRoute = DriversRouteImport.update({
-  id: '/drivers',
-  path: '/drivers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -110,7 +104,6 @@ const ApiAdminSetupFleetRoute = ApiAdminSetupFleetRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/fleet': typeof FleetRoute
-  '/drivers': typeof DriversRoute
   '/reports': typeof ReportsRoute
   '/alerts': typeof AlertsRoute
   '/geofence': typeof GeofenceRoute
@@ -128,7 +121,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/fleet': typeof FleetRoute
-  '/drivers': typeof DriversRoute
   '/reports': typeof ReportsRoute
   '/alerts': typeof AlertsRoute
   '/geofence': typeof GeofenceRoute
@@ -147,7 +139,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/fleet': typeof FleetRoute
-  '/drivers': typeof DriversRoute
   '/reports': typeof ReportsRoute
   '/alerts': typeof AlertsRoute
   '/geofence': typeof GeofenceRoute
@@ -166,7 +157,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/fleet'
-    | '/drivers'
     | '/reports'
     | '/alerts'
     | '/geofence'
@@ -184,7 +174,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/fleet'
-    | '/drivers'
     | '/reports'
     | '/alerts'
     | '/geofence'
@@ -202,7 +191,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/fleet'
-    | '/drivers'
     | '/reports'
     | '/alerts'
     | '/geofence'
@@ -221,7 +209,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FleetRoute: typeof FleetRoute
-  DriversRoute: typeof DriversRoute
   ReportsRoute: typeof ReportsRoute
   AlertsRoute: typeof AlertsRoute
   GeofenceRoute: typeof GeofenceRoute
@@ -294,13 +281,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FleetRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/drivers': {
-      id: '/drivers'
-      path: '/drivers'
-      fullPath: '/drivers'
-      preLoaderRoute: typeof DriversRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/reports': {
       id: '/reports'
       path: '/reports'
@@ -366,7 +346,6 @@ const TripsRouteWithChildren = TripsRoute._addFileChildren(TripsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FleetRoute: FleetRoute,
-  DriversRoute: DriversRoute,
   ReportsRoute: ReportsRoute,
   AlertsRoute: AlertsRoute,
   GeofenceRoute: GeofenceRoute,

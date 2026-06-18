@@ -11,11 +11,13 @@
 CREATE EXTENSION IF NOT EXISTS pg_graphql;
 -- L'endpoint GraphQL est automatiquement expose sur /graphql/v1 avec RLS.
 
--- ─── 2. Table driver_scores ────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS public.driver_scores (
+-- ─── 2. Table engine_scores (score d'usage par engin) ──────────────────
+-- Note : v3.1 retire le RFID. Le score est calculé par engin (device_id)
+-- et reflète la qualité d'usage de l'engin, indépendamment du conducteur.
+CREATE TABLE IF NOT EXISTS public.engine_scores (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id        UUID NOT NULL,
-  driver_badge_id TEXT NOT NULL,                       -- FK soft vers driver_badges.badge_uid
+  device_id       UUID NOT NULL REFERENCES public.devices(id) ON DELETE CASCADE,
   period_start    DATE NOT NULL,
   period_end      DATE NOT NULL,
   -- Composantes (toutes >= 0, plus c'est haut plus c'est mauvais)
@@ -26,23 +28,23 @@ CREATE TABLE IF NOT EXISTS public.driver_scores (
   night_minutes      INT  NOT NULL DEFAULT 0,          -- minutes 22h-04h
   overspeed_count    INT  NOT NULL DEFAULT 0,          -- depassements > 90 km/h
   km_driven          REAL NOT NULL DEFAULT 0.0,
-  -- Score agrege normalise 0-100 (100 = comportement irreprochable)
+  -- Score agrege normalise 0-100 (100 = usage irreprochable)
   score              SMALLINT NOT NULL DEFAULT 100 CHECK (score BETWEEN 0 AND 100),
   computed_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (owner_id, driver_badge_id, period_start, period_end)
+  UNIQUE (owner_id, device_id, period_start, period_end)
 );
 
-ALTER TABLE public.driver_scores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.engine_scores ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "owner_can_read_driver_scores"
-  ON public.driver_scores FOR SELECT
+CREATE POLICY "owner_can_read_engine_scores"
+  ON public.engine_scores FOR SELECT
   USING (owner_id = auth.uid());
 
-GRANT SELECT ON public.driver_scores TO authenticated;
-GRANT ALL    ON public.driver_scores TO service_role;
+GRANT SELECT ON public.engine_scores TO authenticated;
+GRANT ALL    ON public.engine_scores TO service_role;
 
-CREATE INDEX IF NOT EXISTS idx_driver_scores_badge_period
-  ON public.driver_scores (driver_badge_id, period_end DESC);
+CREATE INDEX IF NOT EXISTS idx_engine_scores_device_period
+  ON public.engine_scores (device_id, period_end DESC);
 
 -- ─── 3. Webhooks endpoints (intégration partenaires) ───────────────────
 CREATE TABLE IF NOT EXISTS public.webhook_endpoints (
