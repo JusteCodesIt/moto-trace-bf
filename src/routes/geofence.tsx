@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, MapPin, Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, MapPin, Plus, Trash2, X, Layers, PenTool } from "lucide-react";
+import { useCallback, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { MapCanvas } from "@/components/MapCanvas";
 import { useApp, type Zone } from "@/lib/store";
+import { haversineM } from "@/lib/geo";
 import { confirm, notify } from "@/components/ConfirmDialog";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -26,8 +27,10 @@ type EditDraft = {
 function GeofencePage() {
   const telemetry = useApp((s) => s.telemetry);
   const zones = useApp((s) => s.zones);
-  const device = useApp((s) => s.device);
   const [panelOpen, setPanelOpen] = useState(false);
+
+  // Draw mode: user clicks center on map, then clicks perimeter to set radius
+  const [drawMode, setDrawMode] = useState<"off" | "center" | "radius">("off");
 
   const [editing, setEditing] = useState<EditDraft>({
     id: null, name: "", shape: "circle",
@@ -48,26 +51,46 @@ function GeofencePage() {
       radius: 250, alertExit: true, alertEnter: false,
     });
 
+  // Reload every account geofence (RLS-scoped to the owner) so a freshly saved
+  // fleet-wide zone shows immediately, without waiting on the realtime event.
+  const reloadZones = async () => {
+    const { data } = await supabase.from("geofences").select("*");
+    if (data) {
+      useApp.getState().setZones(
+        data.map((r: Record<string, any>) => ({
+          id: r.id, name: r.name, shape: r.shape as "circle" | "rect",
+          lat: r.lat, lng: r.lng, radius: r.radius_m,
+          alertExit: r.alert_on_exit, alertEnter: r.alert_on_enter, active: r.active,
+        })),
+      );
+    }
+  };
+
   const save = async () => {
-    if (!device) { await notify({ title: "Tracker non provisionné", tone: "warning" }); return; }
     if (!editing.name.trim()) {
       await notify({ title: "Nom requis", description: "Donnez un nom à la zone.", tone: "warning" });
       return;
     }
+    if (editing.radius < 10) {
+      await notify({ title: "Rayon trop petit", description: "Le rayon doit valoir au moins 10 m.", tone: "warning" });
+      return;
+    }
     const ok = await confirm({
       title: editing.id ? "Enregistrer les modifications ?" : "Créer cette nouvelle zone ?",
-      description: `« ${editing.name} » — rayon ${editing.radius} m.`,
+      description: `« ${editing.name} » — rayon ${fmtRadius(editing.radius)}. Valable pour tous les véhicules.`,
       tone: "warning",
       confirmLabel: editing.id ? "Enregistrer" : "Créer",
     });
     if (!ok) return;
 
+    // Zone valable pour toute la flotte : rattachée au compte (owner, défaut SQL
+    // auth.uid()) et non à un appareil. device_id = null → tous les véhicules.
     const payload = {
-      device_id: device.id,
+      device_id: null as string | null,
       name: editing.name.trim(),
       shape: editing.shape,
       lat: editing.lat, lng: editing.lng,
-      radius_m: editing.radius,
+      radius_m: Math.round(editing.radius),
       alert_on_exit: editing.alertExit,
       alert_on_enter: editing.alertEnter,
       active: true,
@@ -76,7 +99,8 @@ function GeofencePage() {
       ? await supabase.from("geofences").update(payload).eq("id", editing.id)
       : await supabase.from("geofences").insert(payload);
     if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
-    await notify({ title: "Zone enregistrée", tone: "success" });
+    await reloadZones();
+    await notify({ title: "Zone enregistrée", description: "Appliquée à tous les véhicules.", tone: "success" });
     reset();
   };
 
@@ -89,11 +113,30 @@ function GeofencePage() {
     if (!ok) return;
     const { error } = await supabase.from("geofences").delete().eq("id", z.id);
     if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
+    await reloadZones();
     if (editing.id === z.id) reset();
   };
 
+  const onMapClick = useCallback((lat: number, lng: number) => {
+    if (drawMode === "center") {
+      setEditing((e) => ({ ...e, lat, lng }));
+      setDrawMode("radius");
+    } else if (drawMode === "radius") {
+      const r = Math.round(haversineM(editing.lat, editing.lng, lat, lng));
+      setEditing((e) => ({ ...e, radius: Math.max(10, r) }));
+      setDrawMode("off");
+    } else {
+      setEditing((e) => ({ ...e, lat, lng }));
+    }
+  }, [drawMode, editing.lat, editing.lng]);
+
+  const startDraw = () => {
+    setDrawMode("center");
+    reset();
+  };
+
   // Compute live distance to centre of editing zone
-  const distToEdit = haversine(telemetry.lat, telemetry.lng, editing.lat, editing.lng);
+  const distToEdit = haversineM(telemetry.lat, telemetry.lng, editing.lat, editing.lng);
   const inside = distToEdit <= editing.radius;
 
   return (
@@ -105,15 +148,55 @@ function GeofencePage() {
           followVehicle={false}
           zones={zones.map((z) => ({
             id: z.id, shape: z.shape, lat: z.lat, lng: z.lng, radius: z.radius, name: z.name,
-            status: haversine(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
+            status: haversineM(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
           }))}
           editingZone={{
             id: editing.id ?? "draft", shape: editing.shape,
             lat: editing.lat, lng: editing.lng, radius: editing.radius,
           }}
-          onMapClick={(lat, lng) => setEditing((e) => ({ ...e, lat, lng }))}
+          onMapClick={onMapClick}
         />
       </div>
+
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+        <div className="glass-strong px-3.5 py-2.5 flex items-center gap-2">
+          <Layers className="size-4 text-[var(--accent-primary)]" />
+          <span className="text-[11px] font-semibold text-[var(--text-secondary)]">
+            Zones valables pour tous les véhicules
+          </span>
+        </div>
+        <button
+          onClick={startDraw}
+          className={`glass-strong h-10 px-3.5 flex items-center gap-2 text-[11px] font-semibold transition-colors ${
+            drawMode !== "off"
+              ? "ring-2 ring-[var(--accent-primary)] text-[var(--accent-primary)]"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          }`}
+          title="Dessiner une zone directement sur la carte"
+        >
+          <PenTool className="size-4" />
+          Dessiner
+        </button>
+      </div>
+
+      {drawMode !== "off" && (
+        <div className="absolute top-16 left-3 z-20 glass-strong px-4 py-3 rounded-lg border border-[var(--accent-primary)]/40 max-w-[280px]">
+          <div className="text-xs font-semibold text-[var(--accent-primary)] mb-1">
+            {drawMode === "center" ? "Étape 1 / 2 — Centre" : "Étape 2 / 2 — Rayon"}
+          </div>
+          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+            {drawMode === "center"
+              ? "Cliquez sur la carte pour placer le centre de la géozone."
+              : "Cliquez maintenant sur le périmètre souhaité pour définir le rayon."}
+          </p>
+          <button
+            onClick={() => setDrawMode("off")}
+            className="mt-2 text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent-red)] underline"
+          >
+            Annuler
+          </button>
+        </div>
+      )}
 
       <div className="absolute top-3 right-3 z-20 glass-strong px-4 py-3 flex items-center gap-3">
         <span
@@ -178,7 +261,7 @@ function GeofencePage() {
 
         <div className="overflow-y-auto px-5 py-4 space-y-5" style={{ maxHeight: "calc(75vh - 56px)" }}>
         <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-          Cliquez sur la carte pour déplacer le centre de la zone en édition.
+          Cliquez sur la carte pour déplacer le centre, ou utilisez le bouton <strong>Dessiner</strong> pour tracer la zone manuellement (centre → périmètre).
         </p>
 
         <div className="space-y-2">
@@ -220,15 +303,38 @@ function GeofencePage() {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>Rayon</Label>
-            <span className="text-xs mono text-[var(--accent-cyan)]">{editing.radius} m</span>
+            <Label>Rayon (sans limite)</Label>
+            <span className="text-xs mono text-[var(--accent-cyan)]">{fmtRadius(editing.radius)}</span>
           </div>
+          {/* Saisie libre en mètres — aucune restriction de taille. */}
+          <div className="flex items-center gap-2">
+            <input
+              type="number" min={10} step={10}
+              value={editing.radius}
+              onChange={(e) => setEditing({ ...editing, radius: Math.max(0, parseInt(e.target.value) || 0) })}
+              className="w-full h-9 px-2.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] text-xs mono outline-none focus:border-[var(--accent-primary)]"
+            />
+            <span className="text-[11px] text-[var(--text-secondary)]">m</span>
+          </div>
+          {/* Le curseur reste une commodité (jusqu'à 50 km) ; le champ ci-dessus
+              accepte n'importe quelle valeur au-delà. */}
           <input
-            type="range" min={50} max={5000} step={10}
-            value={editing.radius}
+            type="range" min={50} max={50000} step={50}
+            value={Math.min(editing.radius, 50000)}
             onChange={(e) => setEditing({ ...editing, radius: parseInt(e.target.value) })}
             className="w-full accent-[var(--accent-primary)]"
           />
+          <div className="flex flex-wrap gap-1.5">
+            {[500, 2000, 5000, 15000, 35000].map((r) => (
+              <button
+                key={r}
+                onClick={() => setEditing({ ...editing, radius: r })}
+                className={`px-2 h-6 rounded text-[10px] mono transition-colors ${editing.radius === r ? "bg-[var(--accent-primary)] text-[var(--accent-milk)]" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+              >
+                {fmtRadius(r)}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-1 pt-2 border-t border-[var(--border)]">
@@ -250,7 +356,7 @@ function GeofencePage() {
             <p className="text-[11px] text-[var(--text-secondary)]">Aucune zone définie pour le moment.</p>
           )}
           {zones.map((z) => {
-            const inZone = haversine(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius;
+            const inZone = haversineM(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius;
             return (
               <div
                 key={z.id}
@@ -283,11 +389,10 @@ function GeofencePage() {
   );
 }
 
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371000, toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
+
+function fmtRadius(m: number): string {
+  if (m >= 1000) return `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)} km`;
+  return `${Math.round(m)} m`;
 }
 
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {

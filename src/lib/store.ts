@@ -37,7 +37,8 @@ const OUAGA: TelemetryPoint = {
   lat: 12.364, lng: -1.5328, speed: 0, heading: 0, altitude: 0,
   satellites: 0, hdop: 0, gpsSource: null, batteryMain: 0, batteryBackup: 0,
   gsmBars: 0, gsmCarrier: "—", engineOn: false,
-  accel: { x: 0, y: 0, z: 0 }, timestamp: 0,
+  accel: { x: 0, y: 0, z: 0 },
+  timestamp: 0,
 };
 
 interface State {

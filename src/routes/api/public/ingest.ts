@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createHmac, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { checkIpIngestRate, checkDeviceIngestRate, extractIp } from "@/lib/rate-limiter";
+import { checkIpIngestRate, checkDeviceIngestRate, checkAlertRate, extractIp } from "@/lib/rate-limiter";
+import { haversineM } from "@/lib/geo";
+import { log } from "@/lib/logger";
 
 /**
  * Telemetry ingestion endpoint for the ESP32-S3 tracker.
@@ -33,21 +35,7 @@ const Schema = z.object({
   accel_y: z.number().nullish(),
   accel_z: z.number().nullish(),
   accel: z.object({ x: z.number(), y: z.number(), z: z.number() }).nullish(),
-  // v3.0 : Cellular fallback mode (CAT-M1 / AUTO / GSM_2G)
-  cellular_mode: z.enum(["CAT-M1", "AUTO", "GSM_2G"]).nullish(),
-  // v3.0 : J1939 engine data (PGN 61444, 65262, 65266, 65265)
-  engine_rpm: z.number().min(0).max(10000).nullish(),
-  engine_torque_pct: z.number().int().min(-125).max(125).nullish(),
-  coolant_temp_c: z.number().int().min(-40).max(215).nullish(),
-  oil_temp_c: z.number().int().min(-273).max(300).nullish(),
-  fuel_rate_lph: z.number().min(0).max(3000).nullish(),
-  fuel_total_l: z.number().min(0).nullish(),
-  wheel_speed_kmh: z.number().min(0).max(300).nullish(),
-  // v3.0 : IMU MPU6050 event counters (since last clear)
-  shock_count: z.number().int().min(0).max(255).nullish(),
-  brake_count: z.number().int().min(0).max(255).nullish(),
-  accel_count: z.number().int().min(0).max(255).nullish(),
-  rollover_count: z.number().int().min(0).max(255).nullish(),
+  cellular_mode: z.string().max(20).nullish(),
   events: z.array(z.object({
     kind: z.string().max(40),
     severity: z.enum(["critical", "warning", "info"]),
@@ -74,6 +62,7 @@ const noop = () => {};
 
 /** Fire-and-forget audit log entry — never blocks the response path. */
 function audit(action: string, ip: string, deviceId?: string | null) {
+  log.warn("ingest_audit", { action, ip, deviceId });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (supabaseAdmin as any).from("audit_logs")
     .insert({ action, ip, device_id: deviceId ?? null })
@@ -149,6 +138,17 @@ export const Route = createFileRoute("/api/public/ingest")({
         }
 
         const recordedAt = parsed.recorded_at ?? new Date().toISOString();
+
+        // SEC-15: Reject frames with unreasonable timestamps
+        const recordedMs = new Date(recordedAt).getTime();
+        const nowMs = Date.now();
+        if (recordedMs < nowMs - 7 * 86400_000) {
+          return json({ error: "recorded_at too old (> 7 days)" }, 400);
+        }
+        if (recordedMs > nowMs + 5 * 60_000) {
+          return json({ error: "recorded_at in the future (> 5 min)" }, 400);
+        }
+
         const ax = parsed.accel_x ?? parsed.accel?.x ?? null;
         const ay = parsed.accel_y ?? parsed.accel?.y ?? null;
         const az = parsed.accel_z ?? parsed.accel?.z ?? null;
@@ -165,45 +165,20 @@ export const Route = createFileRoute("/api/public/ingest")({
           engine_on: parsed.engine_on ?? null,
           gps_source: parsed.gps_source ?? null,
           accel_x: ax, accel_y: ay, accel_z: az,
-          // v3.0 : extensions automatisation
           cellular_mode:     parsed.cellular_mode      ?? null,
-          engine_rpm:        parsed.engine_rpm         ?? null,
-          engine_torque_pct: parsed.engine_torque_pct  ?? null,
-          coolant_temp_c:    parsed.coolant_temp_c     ?? null,
-          oil_temp_c:        parsed.oil_temp_c         ?? null,
-          fuel_rate_lph:     parsed.fuel_rate_lph      ?? null,
-          fuel_total_l:      parsed.fuel_total_l       ?? null,
-          wheel_speed_kmh:   parsed.wheel_speed_kmh    ?? null,
-          shock_count:       parsed.shock_count        ?? null,
-          brake_count:       parsed.brake_count        ?? null,
-          accel_count:       parsed.accel_count        ?? null,
-          rollover_count:    parsed.rollover_count     ?? null,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          raw: parsed as any,
         });
         if (tErr) return json({ error: tErr.message }, 500);
 
-        // ── 7bis. v3.0 : IMU events automatiquement convertis en alertes ──
-        const imuAlerts: Array<{ kind: string; severity: "critical" | "warning"; title: string; message: string }> = [];
-        if ((parsed.shock_count ?? 0) > 0)    imuAlerts.push({ kind: "imu_shock",    severity: "critical", title: "Choc detecte",        message: `${parsed.shock_count} evenement(s) de choc > 2.5 g` });
-        if ((parsed.brake_count ?? 0) > 0)    imuAlerts.push({ kind: "imu_brake",    severity: "warning",  title: "Freinage brutal",     message: `${parsed.brake_count} freinage(s) > 0.5 g` });
-        if ((parsed.rollover_count ?? 0) > 0) imuAlerts.push({ kind: "imu_rollover", severity: "critical", title: "Risque retournement",  message: `${parsed.rollover_count} inclinaison(s) > 60 deg` });
-        if (imuAlerts.length) {
-          await supabaseAdmin.from("alerts").insert(imuAlerts.map((a) => ({
-            device_id: deviceId, kind: a.kind, severity: a.severity,
-            title: a.title, message: a.message,
-            lat: parsed.lat, lng: parsed.lng,
-          })));
-        }
-
         // ── 8. Optional events → alerts ──
-        if (parsed.events?.length) {
+        let eventsInserted = false;
+        if (parsed.events?.length && checkAlertRate(deviceId, parsed.events.length)) {
           const rows = parsed.events.map((e) => ({
             device_id: deviceId,
             kind: e.kind, severity: e.severity, title: e.title, message: e.message ?? null,
             lat: parsed.lat, lng: parsed.lng,
           }));
           await supabaseAdmin.from("alerts").insert(rows);
+          eventsInserted = true;
         }
 
         // ── 9. Geofence evaluation symetrique (alert_on_exit + alert_on_enter) ──
@@ -216,6 +191,7 @@ export const Route = createFileRoute("/api/public/ingest")({
           .from("geofences")
           .select("id, name, lat, lng, radius_m, alert_on_exit, alert_on_enter")
           .eq("device_id", deviceId).eq("active", true);
+        const alertsToInsert: Array<{ device_id: string; kind: string; severity: string; title: string; message: string; lat: number; lng: number }> = [];
         if (zones?.length) {
           // 1) Charger les etats precedents pour ce device
           const { data: prevStates } = await (supabaseAdmin as any)
@@ -225,12 +201,10 @@ export const Route = createFileRoute("/api/public/ingest")({
           const prevMap = new Map<string, boolean>(
             (prevStates ?? []).map((s: any) => [s.geofence_id, s.inside]),
           );
-
-          const alertsToInsert: Array<Record<string, unknown>> = [];
           const stateUpserts: Array<Record<string, unknown>> = [];
 
           for (const z of zones) {
-            const dist = haversine(parsed.lat, parsed.lng, z.lat, z.lng);
+            const dist = haversineM(parsed.lat, parsed.lng, z.lat, z.lng);
             const currentlyInside = dist <= z.radius_m;
             const previouslyInside = prevMap.get(z.id);
 
@@ -263,12 +237,55 @@ export const Route = createFileRoute("/api/public/ingest")({
           }
 
           if (alertsToInsert.length) {
-            await supabaseAdmin.from("alerts").insert(alertsToInsert);
+            await (supabaseAdmin as any).from("alerts").insert(alertsToInsert);
           }
           if (stateUpserts.length) {
             await (supabaseAdmin as any)
               .from("geofence_states")
               .upsert(stateUpserts, { onConflict: "device_id,geofence_id" });
+          }
+        }
+
+        // ── 9bis. Fire-and-forget push notification for critical alerts ──
+        const criticalKinds = ["geofence_exit"];
+        const allAlerts = [
+          ...(parsed.events?.filter(() => eventsInserted).map((e) => ({ kind: e.kind, severity: e.severity, title: e.title, message: e.message ?? "" })) ?? []),
+          ...alertsToInsert.map((a) => ({ kind: a.kind, severity: a.severity, title: a.title, message: a.message ?? "" })),
+        ];
+        const criticalAlerts = allAlerts.filter((a) => criticalKinds.includes(a.kind));
+        if (criticalAlerts.length > 0) {
+          const { data: dev } = await supabaseAdmin
+            .from("devices").select("owner_id").eq("id", deviceId).maybeSingle();
+          if (dev?.owner_id) {
+            const supabaseUrl = process.env.SUPABASE_URL ?? "";
+            const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+            if (supabaseUrl && serviceKey) {
+              const alert = criticalAlerts[0];
+              fetch(`${supabaseUrl}/functions/v1/send-push`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  user_id: dev.owner_id,
+                  title: alert.title,
+                  body: alert.message,
+                  tag: alert.kind,
+                  requireInteraction: alert.severity === "critical",
+                }),
+              }).catch(() => {});
+            }
+          }
+        }
+
+        // ── 9ter. Fire-and-forget maintenance check (every 10th frame to avoid spam) ──
+        if (Math.random() < 0.1) {
+          const supabaseUrl = process.env.SUPABASE_URL ?? "";
+          const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+          if (supabaseUrl && serviceKey) {
+            fetch(`${supabaseUrl}/functions/v1/maintenance-check`, {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+              body: "{}",
+            }).catch(() => {});
           }
         }
 
@@ -294,12 +311,3 @@ export const Route = createFileRoute("/api/public/ingest")({
     },
   },
 });
-
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6_371_000;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}

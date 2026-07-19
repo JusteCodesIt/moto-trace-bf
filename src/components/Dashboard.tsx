@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   Satellite,
   SignalHigh,
@@ -17,22 +18,16 @@ import {
   Search,
   Maximize2,
   Ruler,
+  Frame,
   X,
 } from "lucide-react";
 import { useApp, type GpsSource } from "@/lib/store";
-import { useMultiDevice, startMultiDeviceMap, stopMultiDeviceMap } from "@/lib/multi-device";
+import { useMultiDevice, startMultiDeviceMap, stopMultiDeviceMap, type LiveDevice } from "@/lib/multi-device";
 import { MapCanvas } from "./MapCanvas";
-import { VehicleHoverCard } from "./VehicleHoverCard";
-import { bearingToCompass, fmtCoord, relTime, speedColor } from "@/lib/format";
+import { fmtCoord, relTime, speedColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { haversineM } from "@/lib/geo";
 import { notify } from "./ConfirmDialog";
-
-function distM(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371000, toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 function gpsSourceInfo(source: GpsSource | null) {
   switch (source) {
@@ -90,22 +85,37 @@ export function Dashboard() {
     [devices, primaryId],
   );
 
-  // Hover card state — small debounce prevents flicker when cursor crosses marker bounds
-  const [hoveredDeviceId, setHoveredDeviceId] = useState<string | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Selected vehicle — its route is highlighted orange (with waypoints) and a
+  // click popup shows its details. Clicking empty map deselects.
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const primaryVehicle = primaryId ? (devices[primaryId] ?? null) : null;
+  // Prefer the vehicle's long on-road store trail (demo fleet); fall back to the
+  // telemetry-history trail for real accounts.
+  const primaryTrail = (primaryVehicle?.trail && primaryVehicle.trail.length > trail.length)
+    ? primaryVehicle.trail
+    : trail;
 
-  const handleVehicleHover = useCallback((deviceId: string | null) => {
-    if (deviceId !== null) {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      setHoveredDeviceId(deviceId);
-    } else {
-      hideTimerRef.current = setTimeout(() => setHoveredDeviceId(null), 120);
+  const selectedTrail = selectedVehicleId
+    ? (selectedVehicleId === primaryId ? primaryTrail : devices[selectedVehicleId]?.trail ?? null)
+    : null;
+
+  // Waypoints along the active route, spaced by DISTANCE (~350 m) rather than a
+  // fixed count, so that once the user zooms in enough several dots stay in view
+  // (MapCanvas hides them below WAYPOINT_MIN_ZOOM). Defaults to the primary
+  // vehicle's route so zooming always reveals them, even without a selection.
+  const waypoints = useMemo<Array<{ lat: number; lng: number }>>(() => {
+    const src = selectedTrail ?? primaryTrail;
+    if (!src || src.length < 4) return [];
+    const STEP_M = 350;
+    const MAX = 90;
+    const wp: Array<{ lat: number; lng: number }> = [];
+    let acc = 0;
+    for (let i = 1; i < src.length && wp.length < MAX; i++) {
+      acc += haversineM(src[i - 1].lat, src[i - 1].lng, src[i].lat, src[i].lng);
+      if (acc >= STEP_M) { wp.push(src[i]); acc = 0; }
     }
-  }, []);
-
-  // Resolve hover card data — reads primary from multi-device store too so all
-  // markers (primary + secondary) show the same card format
-  const hoveredVehicle = hoveredDeviceId ? (devices[hoveredDeviceId] ?? null) : null;
+    return wp;
+  }, [selectedTrail, primaryTrail]);
 
   const [recenterTick, setRecenterTick] = useState(0);
   const [measuring, setMeasuring] = useState(false);
@@ -121,6 +131,23 @@ export function Dashboard() {
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
+  // Vehicle appears on the map only once a device exists AND has been paired
+  // (i.e. real telemetry has been received). No device / no frame → no marker.
+  const deviceCount = Object.keys(devices).length;
+  const showVehicle = !!device && hasTelemetry;
+
+  const [fleetFitTick, setFleetFitTick] = useState(0);
+  const didAutoFitRef = useRef(false);
+
+  // Auto-fit the viewport around the whole fleet the first time it loads.
+  useEffect(() => {
+    if (deviceCount > 1 && !didAutoFitRef.current) {
+      didAutoFitRef.current = true;
+      const t = setTimeout(() => setFleetFitTick((n) => n + 1), 600);
+      return () => clearTimeout(t);
+    }
+  }, [deviceCount]);
+
   const unread = unreadAlerts();
 
   return (
@@ -128,10 +155,10 @@ export function Dashboard() {
       <MapCanvas
         center={[telemetry.lat, telemetry.lng]}
         heading={telemetry.heading}
-        trail={trail}
+        trail={primaryTrail}
         zones={zones.filter((z) => z.active).map((z) => ({
           id: z.id, shape: z.shape, lat: z.lat, lng: z.lng, radius: z.radius, name: z.name,
-          status: distM(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
+          status: haversineM(telemetry.lat, telemetry.lng, z.lat, z.lng) <= z.radius ? "in" : "out",
         }))}
         style={mapStyle}
         recenterTick={recenterTick}
@@ -150,43 +177,62 @@ export function Dashboard() {
         }
         extraVehicles={extraVehicles}
         primaryVehicleId={primaryId}
-        onVehicleHover={handleVehicleHover}
+        primaryVehicle={primaryVehicle}
+        selectedVehicleId={selectedVehicleId}
+        onVehicleClick={setSelectedVehicleId}
+        onMapClick={() => setSelectedVehicleId(null)}
+        waypoints={waypoints}
+        showPrimary={showVehicle}
+        followVehicle={extraVehicles.length === 0}
+        fitFleetTick={fleetFitTick}
       />
-
-      {/* ─── VEHICLE HOVER CARD (top-right, pointer-events-none) ─── */}
-      <VehicleHoverCard vehicle={hoveredVehicle} />
 
       {/* ─── TOP BAR ─── */}
       <div className="absolute top-3 left-3 right-3 md:left-4 md:right-4 z-20 flex items-center justify-between gap-3 pointer-events-none">
         <div className="glass px-3 h-11 flex items-center gap-3 pointer-events-auto">
           <SocketDot status={socketStatus} />
           <span className="text-sm font-semibold tracking-tight hidden sm:inline">AutoTrack</span>
+          <FleetStatusBadge devices={devices} />
         </div>
 
-        <div className="glass px-4 h-11 flex items-center gap-3 pointer-events-auto">
-          <StatusDot online={telemetry.engineOn} />
-          <span className="text-sm font-medium">{vehicleName}</span>
-          <span className="hidden sm:inline text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--accent-green)] uppercase tracking-wider">
-            {telemetry.engineOn ? "EN LIGNE" : "HORS LIGNE"}
-          </span>
-        </div>
+        {device && (
+          <div className="glass px-4 h-11 flex items-center gap-3 pointer-events-auto">
+            <StatusDot online={telemetry.engineOn} />
+            <span className="text-sm font-medium truncate max-w-[120px]">{vehicleName}</span>
+            <span className="hidden sm:inline text-[10px] mono px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] uppercase tracking-wider"
+              style={{ color: telemetry.engineOn ? "var(--accent-green)" : "var(--accent-red)" }}>
+              {telemetry.engineOn ? "MOTEUR ON" : "MOTEUR OFF"}
+            </span>
+          </div>
+        )}
 
-        <a href="/alerts" title="Voir les alertes" className="glass relative h-11 w-11 grid place-items-center pointer-events-auto hover:bg-[var(--bg-elevated)] transition-colors">
+        <Link to="/alerts" title="Voir les alertes" className="glass relative h-11 w-11 grid place-items-center pointer-events-auto hover:bg-[var(--bg-elevated)] transition-colors">
           <Bell className="size-[18px]" />
           {unread > 0 && (
             <span className="absolute -top-1 -right-1 text-[10px] mono px-1.5 py-0.5 rounded-full bg-[var(--accent-red)] text-white min-w-[18px] text-center">
               {unread}
             </span>
           )}
-        </a>
+        </Link>
       </div>
+
+      {/* ─── FLEET STATUS STRIP (bottom-left, all trackers) ─── */}
+      <FleetStatusStrip devices={devices} primaryId={primaryId} />
 
       {/* ─── MAP TOOL CLUSTER ─── */}
       <div className="absolute top-20 md:top-20 left-3 z-20 glass p-1 flex flex-col gap-0.5">
         {[
+          ...(deviceCount > 1
+            ? [{
+                icon: Frame,
+                label: "Voir toute la flotte",
+                active: false,
+                action: () => setFleetFitTick((n) => n + 1),
+              }]
+            : []),
           {
             icon: Crosshair,
-            label: "Centrer sur la moto",
+            label: "Centrer sur le véhicule",
             active: false,
             action: () => {
               setRecenterTick((n) => n + 1);
@@ -200,6 +246,7 @@ export function Dashboard() {
               window.open(
                 `https://www.google.com/maps/dir/?api=1&destination=${telemetry.lat},${telemetry.lng}`,
                 "_blank",
+                "noopener,noreferrer",
               ),
           },
           {
@@ -236,6 +283,7 @@ export function Dashboard() {
           <button
             key={label}
             title={label}
+            aria-label={label}
             onClick={action}
             className={cn(
               "size-9 grid place-items-center rounded-md transition-colors",
@@ -249,8 +297,8 @@ export function Dashboard() {
         ))}
       </div>
 
-      {/* ─── BASE LAYER SWITCHER ─── */}
-      <div className="absolute top-20 right-3 z-20 glass p-1 flex">
+      {/* ─── BASE LAYER SWITCHER (shifted left of the desktop right panel) ─── */}
+      <div className="absolute top-20 right-3 lg:right-[352px] z-30 glass p-1 flex">
         {(["streets", "satellite"] as const).map((s) => (
           <button
             key={s}
@@ -359,32 +407,26 @@ export function Dashboard() {
         </div>
       </aside>
 
-      {/* ─── SPEED OVERLAY ─── */}
-      <div className="absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-20 glass-strong px-6 py-3 flex flex-col items-center min-w-[180px]">
-        <div className="flex items-baseline gap-2">
-          <span
-            className="text-5xl font-bold leading-none tabular-nums"
-            style={{ color: speedColor(telemetry.speed) }}
-          >
-            {Math.round(telemetry.speed)}
-          </span>
-          <span className="text-xs text-[var(--text-secondary)] mono uppercase">km/h</span>
-        </div>
-        <div className="text-[11px] mono text-[var(--text-secondary)] mt-1">
-          {Math.round(telemetry.heading)}° {bearingToCompass(telemetry.heading)}
-        </div>
-      </div>
 
-      {/* ─── EMPTY STATE: no telemetry yet ─── */}
-      {!hasTelemetry && (
+      {/* ─── EMPTY STATE: no device / not paired yet ─── */}
+      {!showVehicle && (
         <div className="absolute inset-x-3 top-[88px] z-20 md:left-1/2 md:-translate-x-1/2 md:inset-x-auto md:max-w-md">
           <div className="glass-strong p-4 rounded-lg border border-[var(--accent-amber)]/40">
             <div className="text-xs uppercase tracking-wider text-[var(--accent-amber)] font-semibold mb-1">
-              En attente du tracker
+              {device ? "En attente du tracker" : "Aucun véhicule sur la carte"}
             </div>
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-              Aucune trame reçue du tracker pour le moment. La carte affichera la position dès que le dispositif enverra sa première trame HTTPS signée.
-              Configurez le code de jumelage et la clé HMAC depuis <a className="text-[var(--accent-cyan)] hover:underline" href="/settings">Paramètres</a>.
+              {device ? (
+                <>
+                  Aucune trame reçue du tracker pour le moment. La carte affichera la position dès que le dispositif enverra sa première trame HTTPS signée.
+                  Récupérez le code de jumelage et la clé HMAC depuis la <a className="text-[var(--accent-cyan)] hover:underline" href="/fleet">fiche du véhicule</a>.
+                </>
+              ) : (
+                <>
+                  Aucun véhicule n'apparaîtra tant qu'un dispositif n'a pas été enregistré puis apparié.
+                  Ajoutez votre premier engin depuis la page <a className="text-[var(--accent-cyan)] hover:underline" href="/fleet">Flotte</a>, puis flashez le tracker : le véhicule s'affichera dès la première trame reçue.
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -419,6 +461,60 @@ function StatusDot({ online }: { online: boolean }) {
         color: online ? "var(--accent-green)" : "var(--accent-red)",
       }}
     />
+  );
+}
+
+function FleetStatusBadge({ devices }: { devices: Record<string, LiveDevice> }) {
+  const all = Object.values(devices);
+  const total = all.length;
+  if (total === 0) return null;
+  const online = all.filter((d) => d.engineOn || d.speed > 0).length;
+  return (
+    <span className="hidden md:inline-flex items-center gap-1.5 text-[10px] mono px-2 py-0.5 rounded bg-[var(--bg-elevated)]">
+      <span className="size-1.5 rounded-full bg-[var(--accent-green)]" />
+      <span className="text-[var(--accent-green)]">{online}</span>
+      <span className="text-[var(--text-dim)]">/</span>
+      <span className="text-[var(--text-secondary)]">{total}</span>
+    </span>
+  );
+}
+
+function FleetStatusStrip({ devices, primaryId }: { devices: Record<string, LiveDevice>; primaryId?: string }) {
+  const all = Object.values(devices);
+  if (all.length <= 1) return null;
+
+  return (
+    <div className="absolute bottom-20 md:bottom-4 left-3 z-20 glass-strong p-2.5 max-w-[260px] max-h-[220px] overflow-y-auto rounded-xl">
+      <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-semibold mb-1.5 px-1">
+        Flotte ({all.length})
+      </div>
+      <div className="space-y-0.5">
+        {all.map((d) => {
+          const isOnline = d.engineOn || d.speed > 0;
+          const isPrimary = d.id === primaryId;
+          return (
+            <div
+              key={d.id}
+              className={cn(
+                "flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] transition-colors",
+                isPrimary ? "bg-[var(--accent-primary)]/10" : "hover:bg-[var(--bg-elevated)]/50",
+              )}
+            >
+              <span
+                className="size-2 rounded-full shrink-0"
+                style={{ backgroundColor: isOnline ? "var(--accent-green)" : "var(--accent-red)" }}
+              />
+              <span className={cn("truncate flex-1", isPrimary && "font-medium")}>
+                {d.name}
+              </span>
+              <span className="mono text-[var(--text-dim)] shrink-0">
+                {d.speed > 0 ? `${Math.round(d.speed)} km/h` : isOnline ? "arrêté" : "off"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -490,6 +586,7 @@ function VitalsPanel() {
             <div className="text-[11px] text-[var(--text-secondary)]">Détection automatique (capteur de tension)</div>
           </div>
         </div>
+
       </div>
 
       <Divider />
@@ -709,6 +806,7 @@ function LiveTab() {
 
 function TripsTab() {
   const allTrips = useApp((s) => s.trips);
+  const primaryId = useApp((s) => s.device?.id);
   const trips = allTrips.slice(0, 5);
   const last3 = allTrips.slice(0, 3);
   const totalDistance = last3.reduce((s, t) => s + t.distanceKm, 0);
@@ -729,9 +827,11 @@ function TripsTab() {
         </div>
       ) : (
         trips.map((t) => (
-          <a
+          <Link
             key={t.id}
-            href={`/trips/${t.id}`}
+            to="/trips/$id"
+            params={{ id: t.id }}
+            search={primaryId ? { device: primaryId } : {}}
             className="card-elev p-3 block hover:bg-[var(--bg-elevated)] transition-colors cursor-pointer"
           >
             <div className="flex items-center justify-between text-[11px] mono text-[var(--text-secondary)] mb-1">
@@ -743,7 +843,7 @@ function TripsTab() {
               <span className="text-[10px] mono text-[var(--text-secondary)]">max {t.maxSpeed}km/h</span>
               <span className="text-[10px] text-[var(--accent-primary)]">▶ Replay</span>
             </div>
-          </a>
+          </Link>
         ))
       )}
     </>

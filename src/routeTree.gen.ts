@@ -9,13 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as FleetRouteImport } from './routes/fleet'
-import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as TripsRouteImport } from './routes/trips'
 import { Route as StatsRouteImport } from './routes/stats'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as RemoteRouteImport } from './routes/remote'
+import { Route as MaintenanceRouteImport } from './routes/maintenance'
+import { Route as GpxRouteImport } from './routes/gpx'
 import { Route as GeofenceRouteImport } from './routes/geofence'
+import { Route as FleetRouteImport } from './routes/fleet'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TripsIdRouteImport } from './routes/trips.$id'
@@ -23,18 +25,7 @@ import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as AuthLoginRouteImport } from './routes/auth.login'
 import { Route as ApiPublicIngestRouteImport } from './routes/api/public/ingest'
 import { Route as ApiPublicShareTokenRouteImport } from './routes/api/public/share.$token'
-import { Route as ApiAdminSetupFleetRouteImport } from './routes/api/admin/setup-fleet'
 
-const FleetRoute = FleetRouteImport.update({
-  id: '/fleet',
-  path: '/fleet',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const TripsRoute = TripsRouteImport.update({
   id: '/trips',
   path: '/trips',
@@ -50,14 +41,34 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RemoteRoute = RemoteRouteImport.update({
   id: '/remote',
   path: '/remote',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MaintenanceRoute = MaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GpxRoute = GpxRouteImport.update({
+  id: '/gpx',
+  path: '/gpx',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GeofenceRoute = GeofenceRouteImport.update({
   id: '/geofence',
   path: '/geofence',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FleetRoute = FleetRouteImport.update({
+  id: '/fleet',
+  path: '/fleet',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsRoute = AlertsRouteImport.update({
@@ -95,19 +106,16 @@ const ApiPublicShareTokenRoute = ApiPublicShareTokenRouteImport.update({
   path: '/api/public/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAdminSetupFleetRoute = ApiAdminSetupFleetRouteImport.update({
-  id: '/api/admin/setup-fleet',
-  path: '/api/admin/setup-fleet',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/fleet': typeof FleetRoute
-  '/reports': typeof ReportsRoute
   '/alerts': typeof AlertsRoute
+  '/fleet': typeof FleetRoute
   '/geofence': typeof GeofenceRoute
+  '/gpx': typeof GpxRoute
+  '/maintenance': typeof MaintenanceRoute
   '/remote': typeof RemoteRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/stats': typeof StatsRoute
   '/trips': typeof TripsRouteWithChildren
@@ -116,15 +124,16 @@ export interface FileRoutesByFullPath {
   '/trips/$id': typeof TripsIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/share/$token': typeof ApiPublicShareTokenRoute
-  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/fleet': typeof FleetRoute
-  '/reports': typeof ReportsRoute
   '/alerts': typeof AlertsRoute
+  '/fleet': typeof FleetRoute
   '/geofence': typeof GeofenceRoute
+  '/gpx': typeof GpxRoute
+  '/maintenance': typeof MaintenanceRoute
   '/remote': typeof RemoteRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/stats': typeof StatsRoute
   '/trips': typeof TripsRouteWithChildren
@@ -133,16 +142,17 @@ export interface FileRoutesByTo {
   '/trips/$id': typeof TripsIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/share/$token': typeof ApiPublicShareTokenRoute
-  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/fleet': typeof FleetRoute
-  '/reports': typeof ReportsRoute
   '/alerts': typeof AlertsRoute
+  '/fleet': typeof FleetRoute
   '/geofence': typeof GeofenceRoute
+  '/gpx': typeof GpxRoute
+  '/maintenance': typeof MaintenanceRoute
   '/remote': typeof RemoteRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/stats': typeof StatsRoute
   '/trips': typeof TripsRouteWithChildren
@@ -150,17 +160,19 @@ export interface FileRoutesById {
   '/share/$token': typeof ShareTokenRoute
   '/trips/$id': typeof TripsIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
-  '/api/admin/setup-fleet': typeof ApiAdminSetupFleetRoute
+  '/api/public/share/$token': typeof ApiPublicShareTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/fleet'
-    | '/reports'
     | '/alerts'
+    | '/fleet'
     | '/geofence'
+    | '/gpx'
+    | '/maintenance'
     | '/remote'
+    | '/reports'
     | '/settings'
     | '/stats'
     | '/trips'
@@ -169,15 +181,16 @@ export interface FileRouteTypes {
     | '/trips/$id'
     | '/api/public/ingest'
     | '/api/public/share/$token'
-    | '/api/admin/setup-fleet'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/fleet'
-    | '/reports'
     | '/alerts'
+    | '/fleet'
     | '/geofence'
+    | '/gpx'
+    | '/maintenance'
     | '/remote'
+    | '/reports'
     | '/settings'
     | '/stats'
     | '/trips'
@@ -186,15 +199,16 @@ export interface FileRouteTypes {
     | '/trips/$id'
     | '/api/public/ingest'
     | '/api/public/share/$token'
-    | '/api/admin/setup-fleet'
   id:
     | '__root__'
     | '/'
-    | '/fleet'
-    | '/reports'
     | '/alerts'
+    | '/fleet'
     | '/geofence'
+    | '/gpx'
+    | '/maintenance'
     | '/remote'
+    | '/reports'
     | '/settings'
     | '/stats'
     | '/trips'
@@ -203,16 +217,17 @@ export interface FileRouteTypes {
     | '/trips/$id'
     | '/api/public/ingest'
     | '/api/public/share/$token'
-    | '/api/admin/setup-fleet'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  FleetRoute: typeof FleetRoute
-  ReportsRoute: typeof ReportsRoute
   AlertsRoute: typeof AlertsRoute
+  FleetRoute: typeof FleetRoute
   GeofenceRoute: typeof GeofenceRoute
+  GpxRoute: typeof GpxRoute
+  MaintenanceRoute: typeof MaintenanceRoute
   RemoteRoute: typeof RemoteRoute
+  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   StatsRoute: typeof StatsRoute
   TripsRoute: typeof TripsRouteWithChildren
@@ -220,7 +235,6 @@ export interface RootRouteChildren {
   ShareTokenRoute: typeof ShareTokenRoute
   ApiPublicIngestRoute: typeof ApiPublicIngestRoute
   ApiPublicShareTokenRoute: typeof ApiPublicShareTokenRoute
-  ApiAdminSetupFleetRoute: typeof ApiAdminSetupFleetRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -246,6 +260,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/remote': {
       id: '/remote'
       path: '/remote'
@@ -253,11 +274,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RemoteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/maintenance': {
+      id: '/maintenance'
+      path: '/maintenance'
+      fullPath: '/maintenance'
+      preLoaderRoute: typeof MaintenanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gpx': {
+      id: '/gpx'
+      path: '/gpx'
+      fullPath: '/gpx'
+      preLoaderRoute: typeof GpxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/geofence': {
       id: '/geofence'
       path: '/geofence'
       fullPath: '/geofence'
       preLoaderRoute: typeof GeofenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fleet': {
+      id: '/fleet'
+      path: '/fleet'
+      fullPath: '/fleet'
+      preLoaderRoute: typeof FleetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts': {
@@ -272,20 +314,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fleet': {
-      id: '/fleet'
-      path: '/fleet'
-      fullPath: '/fleet'
-      preLoaderRoute: typeof FleetRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trips/$id': {
@@ -323,13 +351,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/admin/setup-fleet': {
-      id: '/api/admin/setup-fleet'
-      path: '/api/admin/setup-fleet'
-      fullPath: '/api/admin/setup-fleet'
-      preLoaderRoute: typeof ApiAdminSetupFleetRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -345,11 +366,13 @@ const TripsRouteWithChildren = TripsRoute._addFileChildren(TripsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  FleetRoute: FleetRoute,
-  ReportsRoute: ReportsRoute,
   AlertsRoute: AlertsRoute,
+  FleetRoute: FleetRoute,
   GeofenceRoute: GeofenceRoute,
+  GpxRoute: GpxRoute,
+  MaintenanceRoute: MaintenanceRoute,
   RemoteRoute: RemoteRoute,
+  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   StatsRoute: StatsRoute,
   TripsRoute: TripsRouteWithChildren,
@@ -357,8 +380,17 @@ const rootRouteChildren: RootRouteChildren = {
   ShareTokenRoute: ShareTokenRoute,
   ApiPublicIngestRoute: ApiPublicIngestRoute,
   ApiPublicShareTokenRoute: ApiPublicShareTokenRoute,
-  ApiAdminSetupFleetRoute: ApiAdminSetupFleetRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

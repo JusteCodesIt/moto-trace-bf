@@ -65,9 +65,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "websocket_required" }, 426);
   }
 
-  // ── Extract JWT ────────────────────────────────────────────────────────
-  const url   = new URL(req.url);
-  const token = url.searchParams.get("token")
+  // ── Extract JWT (header only — never from query string to avoid log exposure) ──
+  const token = req.headers.get("Sec-WebSocket-Protocol")
     ?? req.headers.get("authorization")?.replace(/^bearer\s+/i, "");
 
   if (!token) return json({ error: "missing_token" }, 401);

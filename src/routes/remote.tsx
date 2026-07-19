@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Power, MapPin, RotateCw, BatteryLow, KeyRound, Link as LinkIcon } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { DeviceSelector } from "@/components/DeviceSelector";
 import { useApp } from "@/lib/store";
 import { confirm, notify } from "@/components/ConfirmDialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,26 +32,32 @@ type Cmd = { id: string; kind: string; status: string; created_at: string };
 
 function RemotePage() {
   const device = useApp((s) => s.device);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(device?.id ?? "");
+  const activeDeviceId = selectedDeviceId || device?.id;
   const [history, setHistory] = useState<Cmd[]>([]);
 
   useEffect(() => {
-    if (!device) return;
+    if (device?.id && !selectedDeviceId) setSelectedDeviceId(device.id);
+  }, [device?.id, selectedDeviceId]);
+
+  useEffect(() => {
+    if (!activeDeviceId) return;
     let mounted = true;
     const load = async () => {
       const { data } = await supabase
         .from("commands").select("id, kind, status, created_at")
-        .eq("device_id", device.id).order("created_at", { ascending: false }).limit(15);
+        .eq("device_id", activeDeviceId).order("created_at", { ascending: false }).limit(15);
       if (mounted && data) setHistory(data);
     };
     load();
-    const ch = supabase.channel(`cmd:${device.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "commands", filter: `device_id=eq.${device.id}` }, () => load())
+    const ch = supabase.channel(`cmd:${activeDeviceId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "commands", filter: `device_id=eq.${activeDeviceId}` }, () => load())
       .subscribe();
     return () => { mounted = false; supabase.removeChannel(ch); };
-  }, [device]);
+  }, [activeDeviceId]);
 
   const send = async (kind: typeof COMMANDS[number]["kind"], title: string, danger = false) => {
-    if (!device) { await notify({ title: "Aucun tracker", tone: "warning" }); return; }
+    if (!activeDeviceId) { await notify({ title: "Sélectionnez un engin", tone: "warning" }); return; }
     const ok = await confirm({
       title: `Envoyer « ${title} » ?`,
       description: "La commande sera mise en file et exécutée par l'ESP32-S3 dès la prochaine connexion 4G.",
@@ -61,14 +68,14 @@ function RemotePage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { error } = await supabase.from("commands").insert({
-      device_id: device.id, kind, issued_by: user.id,
+      device_id: activeDeviceId, kind, issued_by: user.id,
     });
     if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
     await notify({ title: "Commande mise en file", description: title, tone: "success" });
   };
 
   const sharePosition = async (durHours: number) => {
-    if (!device) { await notify({ title: "Aucun tracker", tone: "warning" }); return; }
+    if (!activeDeviceId) { await notify({ title: "Sélectionnez un engin", tone: "warning" }); return; }
     const ok = await confirm({
       title: `Générer un lien de partage ${durHours}h ?`,
       description: "Toute personne avec ce lien pourra suivre votre position en direct pendant la durée choisie.",
@@ -80,7 +87,7 @@ function RemotePage() {
     const token = crypto.randomUUID().replace(/-/g, "");
     const expiresAt = new Date(Date.now() + durHours * 3600_000).toISOString();
     const { error } = await supabase.from("share_links").insert({
-      token, device_id: device.id, created_by: user.id, expires_at: expiresAt,
+      token, device_id: activeDeviceId, created_by: user.id, expires_at: expiresAt,
     });
     if (error) { await notify({ title: "Erreur", description: error.message, tone: "danger" }); return; }
     const url = `${window.location.origin}/share/${token}`;
@@ -90,9 +97,17 @@ function RemotePage() {
 
   return (
     <AppShell>
-      <PageHeader title="Contrôle distant" subtitle="Commandes hardware T-SIM7080G-S3" icon={Power} />
-
-      <div className="p-4 md:p-8 pb-24 max-w-5xl mx-auto space-y-6">
+      <div className="p-4 md:p-6 pb-24 max-w-5xl mx-auto space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-[var(--accent-cyan)]/10 grid place-items-center">
+            <Power className="size-4 text-[var(--accent-cyan)]" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Contrôle distant</h1>
+            <p className="text-xs text-[var(--text-secondary)]">Commandes hardware ESP32-S3 + SIM7080G</p>
+          </div>
+        </div>
+        <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />
         {/* Status */}
         <div className="card-elev p-4 flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="flex items-center gap-2">
@@ -110,17 +125,6 @@ function RemotePage() {
           <Item label="Tracker" value={device?.name ?? "—"} />
           <Item label="Dernier contact" value={device?.lastSeenAt ? relTime(new Date(device.lastSeenAt).getTime()) : "jamais"} />
           <Item label="Device ID" value={device?.id?.slice(0, 8) + "…" || "—"} mono />
-        </div>
-
-        {/* Hardware-capability note */}
-        <div className="card-elev p-4 border-l-4 border-[var(--accent-cyan)] text-xs text-[var(--text-secondary)] leading-relaxed">
-          <span className="font-semibold text-[var(--text-primary)]">Capacités matérielles :</span>{" "}
-          Le tracker AutoTrack (LILYGO T-SIM7080G-S3 : ESP32-S3 + SIM7080G 4G/LTE + GPS NEO-6M
-          de secours) supporte le forçage d'une trame de position, le mode low-power et le
-          reboot logiciel. La coupure moteur, l'avertisseur sonore et la LED utilisateur{" "}
-          <b>ne sont pas installés</b> sur cette configuration et ne sont donc pas exposés ici.
-          Ces commandes sont mises en file côté serveur ; leur exécution par le firmware à la
-          prochaine connexion est en cours de finalisation.
         </div>
 
         {/* Commands */}

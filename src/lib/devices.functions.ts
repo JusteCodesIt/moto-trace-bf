@@ -83,7 +83,7 @@ export const createDevice = createServerFn({ method: "POST" })
   }) =>
     z.object({
       vehicleType:     z.string().min(2).max(4),
-      vehicleCategory: z.enum(["terrassement", "transport", "levage"]),
+      vehicleCategory: z.enum(["pickup", "suv", "utilitaire"]),
       vehicleModel:    z.string().max(60).optional(),
       vehicleYear:     z.number().int().min(1990).max(2030).optional(),
       label:           z.string().max(60).optional(),
@@ -106,7 +106,6 @@ export const createDevice = createServerFn({ method: "POST" })
     if (seqErr || !internalId) throw new Error("Impossible de générer l'identifiant");
 
     const name = data.label?.trim() || internalId;
-    const pairing = Math.random().toString(36).slice(2, 8).toUpperCase();
 
     const { data: device, error } = await (supabaseAdmin as any)
       .from("devices")
@@ -119,10 +118,9 @@ export const createDevice = createServerFn({ method: "POST" })
         internal_id:      internalId,
         vehicle_model:    data.vehicleModel ?? null,
         vehicle_year:     data.vehicleYear ?? null,
-        pairing_code:     pairing,
       })
       .select(
-        "id, name, plate, vehicle_type, vehicle_category, internal_id, vehicle_model, vehicle_year, firmware, pairing_code, last_seen_at, is_online",
+        "id, name, plate, vehicle_type, vehicle_category, internal_id, vehicle_model, vehicle_year, firmware, last_seen_at, is_online",
       )
       .single() as { data: DeviceRow | null; error: any };
     if (error) throw new Error(error.message);
@@ -200,7 +198,7 @@ export const ensureMyDevice = createServerFn({ method: "POST" })
 
     const { data: existing } = await supabase
       .from("devices")
-      .select("id, name, plate, firmware, pairing_code, last_seen_at, is_online")
+      .select("id, name, plate, firmware, last_seen_at, is_online")
       .eq("owner_id", userId)
       .order("created_at", { ascending: true })
       .limit(1)
@@ -208,11 +206,10 @@ export const ensureMyDevice = createServerFn({ method: "POST" })
 
     let device = existing;
     if (!device) {
-      const pairing = Math.random().toString(36).slice(2, 8).toUpperCase();
       const { data: created, error } = await supabaseAdmin
         .from("devices")
-        .insert({ owner_id: userId, name: "AutoTrack", pairing_code: pairing })
-        .select("id, name, plate, firmware, pairing_code, last_seen_at, is_online")
+        .insert({ owner_id: userId, name: "AutoTrack" })
+        .select("id, name, plate, firmware, last_seen_at, is_online")
         .single();
       if (error) throw new Error(error.message);
       device = created;

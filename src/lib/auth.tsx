@@ -2,8 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "./store";
-import { startRealtime, stopRealtime } from "./realtime";
-import { ensureMyDevice } from "./devices.functions";
+import { startRealtime, stopRealtime, startFleetAlerts } from "./realtime";
+import { startMultiDeviceMap, stopMultiDeviceMap } from "./multi-device";
+import { startDemoSimulator, stopDemoSimulator, isDemoUser } from "./demo-simulator";
+import { listMyDevices } from "./devices.functions";
 import { InlinePreloader } from "@/components/SplashScreen";
 
 
@@ -33,26 +35,37 @@ export function AuthGate({ children }: { children: ReactNode }) {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setState(session ? "authed" : "anon");
-      if (!session) { stopRealtime(); useApp.setState({ device: null, hasTelemetry: false, telemetry: useApp.getState().telemetry }); }
+      if (!session) { stopRealtime(); stopMultiDeviceMap(); stopDemoSimulator(); useApp.setState({ device: null, hasTelemetry: false, alerts: [], telemetry: useApp.getState().telemetry }); }
     });
     return () => { mounted = false; subscription.unsubscribe(); };
   }, [bypass]);
 
-  // Provision + start realtime once authed
+  // Load fleet + start realtime for ALL devices
   useEffect(() => {
     if (bypass || state !== "authed") return;
     let cancelled = false;
     (async () => {
       try {
-        const { device } = await ensureMyDevice();
-        if (cancelled || !device) return;
-        useApp.getState().setDevice({
-          id: device.id, name: device.name,
-          isOnline: device.is_online, lastSeenAt: device.last_seen_at,
-        });
-        await startRealtime(device.id);
+        const devices = await listMyDevices();
+        if (cancelled) return;
+        // Start fleet-wide map (all positions in realtime)
+        await startMultiDeviceMap();
+        // Start fleet-wide alerts (all devices)
+        await startFleetAlerts();
+        // Select first device for detailed telemetry view
+        if (devices.length > 0) {
+          const first = devices[0];
+          useApp.getState().setDevice({
+            id: first.id, name: first.name,
+            isOnline: first.is_online, lastSeenAt: first.last_seen_at,
+          });
+          await startRealtime(first.id);
+        }
+        // Demo account: animate the seeded fleet client-side (no DB writes).
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!cancelled && isDemoUser(user)) startDemoSimulator();
       } catch (e) {
-        console.error("Device provisioning failed", e);
+        console.error("Fleet load failed", e);
       }
     })();
     return () => { cancelled = true; };

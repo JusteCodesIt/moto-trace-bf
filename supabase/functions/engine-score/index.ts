@@ -45,10 +45,23 @@ function haversineKm(la1: number, ln1: number, la2: number, ln2: number) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+function timingSafeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const enc = new TextEncoder();
+  const bufA = enc.encode(a);
+  const bufB = enc.encode(b);
+  let diff = 0;
+  for (let i = 0; i < bufA.length; i++) diff |= bufA[i] ^ bufB[i];
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const auth = req.headers.get("Authorization") ?? "";
-  if (!auth.startsWith("Bearer ")) return new Response("Unauthorized", { status: 401 });
+  const token = auth.replace(/^Bearer\s+/i, "");
+  if (!token || !serviceKey || !timingSafeCompare(token, serviceKey))
+    return new Response("Unauthorized", { status: 401 });
 
   const now = new Date();
   const periodEnd = new Date(now); periodEnd.setUTCHours(0, 0, 0, 0);

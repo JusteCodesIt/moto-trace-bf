@@ -136,6 +136,7 @@ export type Database = {
           created_at: string
           firmware: string | null
           id: string
+          internal_id: string | null
           is_online: boolean
           last_seen_at: string | null
           name: string
@@ -143,11 +144,16 @@ export type Database = {
           pairing_code: string | null
           plate: string | null
           updated_at: string
+          vehicle_category: string | null
+          vehicle_model: string | null
+          vehicle_type: string | null
+          vehicle_year: number | null
         }
         Insert: {
           created_at?: string
           firmware?: string | null
           id?: string
+          internal_id?: string | null
           is_online?: boolean
           last_seen_at?: string | null
           name?: string
@@ -155,11 +161,16 @@ export type Database = {
           pairing_code?: string | null
           plate?: string | null
           updated_at?: string
+          vehicle_category?: string | null
+          vehicle_model?: string | null
+          vehicle_type?: string | null
+          vehicle_year?: number | null
         }
         Update: {
           created_at?: string
           firmware?: string | null
           id?: string
+          internal_id?: string | null
           is_online?: boolean
           last_seen_at?: string | null
           name?: string
@@ -167,6 +178,10 @@ export type Database = {
           pairing_code?: string | null
           plate?: string | null
           updated_at?: string
+          vehicle_category?: string | null
+          vehicle_model?: string | null
+          vehicle_type?: string | null
+          vehicle_year?: number | null
         }
         Relationships: []
       }
@@ -176,11 +191,12 @@ export type Database = {
           alert_on_enter: boolean
           alert_on_exit: boolean
           created_at: string
-          device_id: string
+          device_id: string | null
           id: string
           lat: number
           lng: number
           name: string
+          owner_id: string | null
           radius_m: number
           shape: string
           updated_at: string
@@ -190,11 +206,12 @@ export type Database = {
           alert_on_enter?: boolean
           alert_on_exit?: boolean
           created_at?: string
-          device_id: string
+          device_id?: string | null
           id?: string
           lat: number
           lng: number
           name: string
+          owner_id?: string | null
           radius_m?: number
           shape: string
           updated_at?: string
@@ -204,11 +221,12 @@ export type Database = {
           alert_on_enter?: boolean
           alert_on_exit?: boolean
           created_at?: string
-          device_id?: string
+          device_id?: string | null
           id?: string
           lat?: number
           lng?: number
           name?: string
+          owner_id?: string | null
           radius_m?: number
           shape?: string
           updated_at?: string
@@ -258,6 +276,68 @@ export type Database = {
           },
         ]
       }
+      maintenance_records: {
+        Row: {
+          id: string
+          device_id: string
+          owner_id: string
+          record_type: string
+          title: string
+          description: string | null
+          cost_xof: number
+          mileage_km: number | null
+          performed_at: string
+          next_due_at: string | null
+          next_due_km: number | null
+          parts_replaced: string[] | null
+          garage: string | null
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          device_id: string
+          owner_id: string
+          record_type?: string
+          title: string
+          description?: string | null
+          cost_xof?: number
+          mileage_km?: number | null
+          performed_at?: string
+          next_due_at?: string | null
+          next_due_km?: number | null
+          parts_replaced?: string[] | null
+          garage?: string | null
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          device_id?: string
+          owner_id?: string
+          record_type?: string
+          title?: string
+          description?: string | null
+          cost_xof?: number
+          mileage_km?: number | null
+          performed_at?: string
+          next_due_at?: string | null
+          next_due_km?: number | null
+          parts_replaced?: string[] | null
+          garage?: string | null
+          status?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_records_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telemetry: {
         Row: {
           accel_x: number | null
@@ -266,6 +346,7 @@ export type Database = {
           altitude: number | null
           battery_backup: number | null
           battery_main: number | null
+          cellular_mode: string | null
           device_id: string
           engine_on: boolean | null
           gps_source: string | null
@@ -288,6 +369,7 @@ export type Database = {
           altitude?: number | null
           battery_backup?: number | null
           battery_main?: number | null
+          cellular_mode?: string | null
           device_id: string
           engine_on?: boolean | null
           gps_source?: string | null
@@ -310,6 +392,7 @@ export type Database = {
           altitude?: number | null
           battery_backup?: number | null
           battery_main?: number | null
+          cellular_mode?: string | null
           device_id?: string
           engine_on?: boolean | null
           gps_source?: string | null
@@ -330,6 +413,50 @@ export type Database = {
             foreignKeyName: "telemetry_device_id_fkey"
             columns: ["device_id"]
             isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vehicle_status: {
+        Row: {
+          device_id: string
+          availability: string
+          total_km: number
+          avg_fuel_lph: number | null
+          engine_hours: number
+          last_maintenance_at: string | null
+          next_maintenance_at: string | null
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          device_id: string
+          availability?: string
+          total_km?: number
+          avg_fuel_lph?: number | null
+          engine_hours?: number
+          last_maintenance_at?: string | null
+          next_maintenance_at?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          device_id?: string
+          availability?: string
+          total_km?: number
+          avg_fuel_lph?: number | null
+          engine_hours?: number
+          last_maintenance_at?: string | null
+          next_maintenance_at?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_status_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: true
             referencedRelation: "devices"
             referencedColumns: ["id"]
           },

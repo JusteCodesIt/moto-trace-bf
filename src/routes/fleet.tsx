@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus, Truck, ChevronLeft, Copy, Check, RefreshCw,
   Trash2, Radio, AlertCircle, Loader2, Key, ChevronRight,
@@ -21,6 +21,7 @@ import {
   type VehicleCategory,
 } from "@/lib/vehicle-types";
 import { supabase } from "@/integrations/supabase/client";
+import { relTime } from "@/lib/format";
 
 export const Route = createFileRoute("/fleet")({
   head: () => ({ meta: [{ title: "Flotte — AutoTrack" }] }),
@@ -45,13 +46,7 @@ type AddStep = 1 | 2 | 3 | 4;
 
 function relativeTime(iso: string | null): string {
   if (!iso) return "jamais";
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "à l'instant";
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h}h`;
-  return `il y a ${Math.floor(h / 24)}j`;
+  return relTime(new Date(iso).getTime());
 }
 
 function maskSecret(s: string): string {
@@ -134,9 +129,9 @@ function AddModal({
   onAdded: (d: Device) => void;
 }) {
   const [step, setStep] = useState<AddStep>(1);
-  const [selCat, setSelCat] = useState<VehicleCategory | null>(null);
-  const [selType, setSelType] = useState<string | null>(null);
-  const [vehicleModel, setVehicleModel] = useState("");
+  const [selCat] = useState<VehicleCategory>("pickup");
+  const [selType] = useState<string>("GAV");
+  const [vehicleModel, setVehicleModel] = useState("JMC Grand Avenue");
   const [vehicleYear, setVehicleYear] = useState("");
   const [label, setLabel] = useState("");
   const [loading, setLoading] = useState(false);
@@ -179,11 +174,7 @@ function AddModal({
     }
   };
 
-  const cats = Object.entries(VEHICLE_CATEGORIES) as [VehicleCategory, (typeof VEHICLE_CATEGORIES)[VehicleCategory]][];
-  const typesForCat = selCat ? VEHICLE_TYPES.filter((t) => t.category === selCat) : [];
   const selectedType = getTypeByCode(selType);
-
-  const stepLabels = ["Catégorie", "Type", "Finaliser"];
 
   return (
     <div
@@ -193,139 +184,35 @@ function AddModal({
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="p-6">
 
-          {/* Stepper (only for steps 1-3) */}
+          {/* ── Formulaire d'ajout JMC (1 étape) ──────────────────── */}
           {step < 4 && (
-            <div className="flex items-center gap-2 mb-6">
-              {stepLabels.map((lbl, i) => {
-                const n = (i + 1) as AddStep;
-                const done = step > n;
-                const active = step === n;
-                return (
-                  <div key={n} className="flex items-center gap-2 flex-1 last:flex-none">
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 ${done ? "bg-green-500 text-white" : active ? "bg-[var(--accent-primary)] text-[var(--accent-milk)]" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}
-                    >
-                      {done ? <Check className="size-3.5" /> : n}
-                    </div>
-                    <span className="text-xs text-[var(--text-secondary)] hidden sm:block">{lbl}</span>
-                    {i < 2 && <div className="flex-1 h-px bg-[var(--border)]" />}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ── Étape 1 : Catégorie ─────────────────────────────────── */}
-          {step === 1 && (
             <>
-              <h2 className="text-base font-semibold mb-1">Quel type d'engin ?</h2>
+              <h2 className="text-base font-semibold mb-1">Ajouter un véhicule JMC</h2>
               <p className="text-sm text-[var(--text-secondary)] mb-5">
-                Sélectionnez la catégorie de votre équipement.
+                Tous les véhicules sont de type JMC Grand Avenue. L'identifiant est généré automatiquement.
               </p>
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                {cats.map(([catId, cat]) => (
-                  <button
-                    key={catId}
-                    onClick={() => { setSelCat(catId); setSelType(null); }}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-colors ${selCat === catId ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/5" : "border-[var(--border)] hover:bg-[var(--bg-elevated)]"}`}
-                  >
-                    <span className="text-2xl">{cat.emoji}</span>
-                    <span className="text-[11px] font-medium leading-tight">{cat.label}</span>
-                    <span className="text-[10px] text-[var(--text-secondary)]">{cat.count} types</span>
-                  </button>
-                ))}
-              </div>
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setStep(2)}
-                  disabled={!selCat}
-                  className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40"
-                >
-                  Choisir le type <ChevronRight className="size-4" />
-                </button>
-              </div>
-            </>
-          )}
 
-          {/* ── Étape 2 : Type ─────────────────────────────────────── */}
-          {step === 2 && selCat && (
-            <>
-              <h2 className="text-base font-semibold mb-1">
-                {VEHICLE_CATEGORIES[selCat].emoji} {VEHICLE_CATEGORIES[selCat].label}
-              </h2>
-              <p className="text-sm text-[var(--text-secondary)] mb-4">Choisissez le type précis d'engin.</p>
-              <div className="grid grid-cols-2 gap-2 mb-5">
-                {typesForCat.map((t) => {
-                  const color = getCategoryColor(t.category);
-                  const active = selType === t.code;
-                  return (
-                    <button
-                      key={t.code}
-                      onClick={() => setSelType(t.code)}
-                      className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-colors ${active ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/5" : "border-[var(--border)] hover:bg-[var(--bg-elevated)]"}`}
-                    >
-                      <span
-                        className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded shrink-0"
-                        style={{ background: `${color}22`, color }}
-                      >
-                        {t.code}
-                      </span>
-                      <span className="text-xs font-medium leading-tight">{t.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex gap-2 justify-between">
-                <button
-                  onClick={() => setStep(1)}
-                  className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
-                >
-                  Retour
-                </button>
-                <button
-                  onClick={() => setStep(3)}
-                  disabled={!selType}
-                  className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40"
-                >
-                  Finaliser <ChevronRight className="size-4" />
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* ── Étape 3 : Détails optionnels ───────────────────────── */}
-          {step === 3 && selType && selCat && (
-            <>
-              {/* Prévisualisation de l'ID */}
               <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-elevated)] mb-5 border border-[var(--border)]">
                 <div>
                   <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider font-semibold mb-0.5">
                     Identifiant auto-généré
                   </p>
                   <p className="font-mono font-semibold text-base">
-                    FM-{selType}-
-                    <span className="text-[var(--text-secondary)]">###</span>
+                    AT-GAV-<span className="text-[var(--text-secondary)]">###</span>
                   </p>
                 </div>
-                <TypeBadge vehicleType={selType} />
+                <TypeBadge vehicleType="GAV" />
               </div>
-
-              <p className="text-sm text-[var(--text-secondary)] mb-4">
-                {selectedType?.name} ·{" "}
-                {VEHICLE_CATEGORIES[selCat].label} —{" "}
-                Informations complémentaires (toutes optionnelles)
-              </p>
 
               <div className="space-y-3">
                 <div className="grid grid-cols-[1fr_100px] gap-2">
                   <div>
                     <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                      Marque / Modèle
+                      Modèle
                     </label>
                     <input
                       value={vehicleModel}
                       onChange={(e) => setVehicleModel(e.target.value)}
-                      placeholder="ex: CAT D6, Volvo L90"
                       className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
                     />
                   </div>
@@ -337,7 +224,7 @@ function AddModal({
                       value={vehicleYear}
                       onChange={(e) => setVehicleYear(e.target.value)}
                       type="number"
-                      placeholder="2019"
+                      placeholder="2024"
                       min={1990}
                       max={2030}
                       className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
@@ -346,12 +233,12 @@ function AddModal({
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                    Désignation personnalisée
+                    Nom personnalisé <span className="font-normal normal-case">(optionnel)</span>
                   </label>
                   <input
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="ex: Pelle chantier Nord (laissez vide pour FM-BUL-001)"
+                    placeholder="ex: Véhicule chantier Nord"
                     className="w-full h-9 px-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)]"
                   />
                 </div>
@@ -359,18 +246,18 @@ function AddModal({
 
               <div className="flex gap-2 justify-between mt-5">
                 <button
-                  onClick={() => setStep(2)}
+                  onClick={onClose}
                   className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
                 >
-                  Retour
+                  Annuler
                 </button>
                 <button
                   onClick={handleCreate}
                   disabled={loading}
                   className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-                  Créer l'engin
+                  {loading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                  Ajouter le véhicule
                 </button>
               </div>
             </>
@@ -385,32 +272,46 @@ function AddModal({
                 </div>
                 <div>
                   <h2 className="text-base font-semibold leading-tight">{result.device.internal_id ?? result.device.name}</h2>
-                  <p className="text-xs text-[var(--text-secondary)]">Engin enregistré</p>
+                  <p className="text-xs text-[var(--text-secondary)]">Véhicule enregistré avec succès</p>
                 </div>
               </div>
 
-              <p className="text-sm text-[var(--text-secondary)] mb-4">
-                Copiez ces trois valeurs dans{" "}
-                <code className="font-mono text-[11px] bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded">
-                  include/secrets.h
-                </code>{" "}
-                puis compilez et flashez le module ESP32-S3.
-              </p>
-
-              <div className="space-y-2">
-                <CopyRow label="DEVICE_ID"   value={result.device.id} />
-                <CopyRow label="HMAC_SECRET" value={result.hmacSecret} mask />
-                <CopyRow label="INGEST_URL"  value={result.ingestUrl} />
+              <div className="space-y-3 mb-4">
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-elevated)]">
+                  <span className="size-6 rounded-full bg-[var(--accent-primary)] text-[var(--accent-milk)] text-xs font-bold grid place-items-center shrink-0">1</span>
+                  <div>
+                    <p className="text-sm font-medium">Ouvrez le firmware Arduino</p>
+                    <p className="text-[11px] text-[var(--text-secondary)]">Fichier <code className="mono bg-[var(--bg-surface)] px-1 rounded">include/secrets.h</code></p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-elevated)]">
+                  <span className="size-6 rounded-full bg-[var(--accent-primary)] text-[var(--accent-milk)] text-xs font-bold grid place-items-center shrink-0">2</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium mb-2">Collez ces identifiants</p>
+                    <div className="space-y-1.5">
+                      <CopyRow label="DEVICE_ID"   value={result.device.id} />
+                      <CopyRow label="HMAC_SECRET" value={result.hmacSecret} mask />
+                      <CopyRow label="INGEST_URL"  value={result.ingestUrl} />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-elevated)]">
+                  <span className="size-6 rounded-full bg-[var(--accent-primary)] text-[var(--accent-milk)] text-xs font-bold grid place-items-center shrink-0">3</span>
+                  <div>
+                    <p className="text-sm font-medium">Flashez le tracker</p>
+                    <p className="text-[11px] text-[var(--text-secondary)]">Compilez et uploadez via USB-C sur l'ESP32-S3. Le véhicule apparaîtra sur la carte dès la première trame.</p>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-start gap-2 mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                 <AlertCircle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                  La clé HMAC ne sera plus affichée après fermeture. Vous pouvez la régénérer depuis le détail de l'engin.
+                  La clé HMAC ne sera plus visible après fermeture. Vous pourrez la régénérer depuis la fiche du véhicule.
                 </p>
               </div>
 
-              <div className="flex justify-end mt-5">
+              <div className="flex justify-end mt-4">
                 <button
                   onClick={onClose}
                   className="h-9 px-5 text-sm rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] font-semibold hover:opacity-90 transition-opacity"
@@ -772,20 +673,22 @@ function FleetPage() {
 
   return (
     <AppShell>
-      <div className="p-4 md:p-8 pb-24 max-w-4xl mx-auto">
-        <SectionHero
-          eyebrow="Gestion"
-          icon={Truck}
-          title="Ma flotte"
-          description={`${devices.length} engin${devices.length !== 1 ? "s" : ""} enregistré${devices.length !== 1 ? "s" : ""} — ${online} en ligne. Chaque engin reçoit un identifiant automatique (FM-BUL-001…).`}
-          image={illusSettings}
-        />
+      <div className="p-4 md:p-6 pb-24 max-w-4xl mx-auto">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="size-9 rounded-lg bg-[var(--accent-primary)]/10 grid place-items-center">
+            <Truck className="size-4 text-[var(--accent-primary)]" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Ma flotte JMC</h1>
+            <p className="text-xs text-[var(--text-secondary)]">{devices.length} véhicule{devices.length !== 1 ? "s" : ""} — {online} en ligne</p>
+          </div>
+        </div>
 
         {/* Barre d'actions */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-3 text-sm text-[var(--text-secondary)]">
             <span>
-              <strong className="text-[var(--text-primary)]">{devices.length}</strong> / 750 engins
+              <strong className="text-[var(--text-primary)]">{devices.length}</strong> véhicule{devices.length !== 1 ? "s" : ""}
             </span>
             <span className="text-green-500 font-medium">{online} en ligne</span>
           </div>

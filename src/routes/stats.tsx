@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { DeviceSelector } from "@/components/DeviceSelector";
 import { BarChart, Bar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { useApp } from "@/lib/store";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtDuration } from "@/lib/format";
+import { haversineKm } from "@/lib/geo";
 
 export const Route = createFileRoute("/stats")({
   head: () => ({ meta: [{ title: "Analytics — AutoTrack" }] }),
@@ -29,15 +31,10 @@ type TelRow = {
   battery_main: number | null;
   accel_x: number | null; accel_y: number | null; accel_z: number | null;
   gps_source: string | null;
+  engine_on: boolean | null;
   recorded_at: string;
 };
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371, toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 function computeStats(rows: TelRow[]) {
   // Daily distance — last 7 calendar days present in the dataset
@@ -74,6 +71,19 @@ function computeStats(rows: TelRow[]) {
   const movingSamples = rows.filter((r) => (r.speed_kmh ?? 0) > 3).length;
   const drivingMin = Math.round((movingSamples * SAMPLE_INTERVAL_SEC) / 60);
 
+  let tripCount = 0;
+  let inTrip = false;
+  for (const r of rows) {
+    if ((r.speed_kmh ?? 0) > 3) {
+      if (!inTrip) { tripCount++; inTrip = true; }
+    } else {
+      inTrip = false;
+    }
+  }
+
+  const engineOnSamples = rows.filter((r) => r.engine_on).length;
+  const engineHours = Math.round((engineOnSamples * SAMPLE_INTERVAL_SEC) / 3600 * 10) / 10;
+
   let speedScore: number | null = null;
   let stabilityScore: number | null = null;
   let gpsScore: number | null = null;
@@ -90,26 +100,31 @@ function computeStats(rows: TelRow[]) {
     ? Math.round((speedScore + stabilityScore + gpsScore) / 3)
     : null;
 
-  return { dailyDistance, hourlySpeed, totalKm, maxSpeed, drivingMin, speedScore, stabilityScore, gpsScore, avgBattery, overallScore };
+  return { dailyDistance, hourlySpeed, totalKm, maxSpeed, drivingMin, tripCount, engineHours, speedScore, stabilityScore, gpsScore, avgBattery, overallScore };
 }
 
 function StatsPage() {
   const device = useApp((s) => s.device);
-  const trips = useApp((s) => s.trips);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(device?.id ?? "");
+  const activeDeviceId = selectedDeviceId || device?.id;
   const periods = Object.keys(PERIODS) as Period[];
   const [period, setPeriod] = useState<Period>("7 jours");
   const [rows, setRows] = useState<TelRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!device) { setLoading(false); return; }
+    if (device?.id && !selectedDeviceId) setSelectedDeviceId(device.id);
+  }, [device?.id, selectedDeviceId]);
+
+  useEffect(() => {
+    if (!activeDeviceId) { setLoading(false); return; }
     let mounted = true;
     setLoading(true);
     const since = new Date(Date.now() - PERIODS[period] * 86400_000).toISOString();
     supabase
       .from("telemetry")
-      .select("lat,lng,speed_kmh,battery_main,accel_x,accel_y,accel_z,gps_source,recorded_at")
-      .eq("device_id", device.id)
+      .select("lat,lng,speed_kmh,battery_main,accel_x,accel_y,accel_z,gps_source,engine_on,recorded_at")
+      .eq("device_id", activeDeviceId)
       .gte("recorded_at", since)
       .order("recorded_at", { ascending: true })
       .limit(5000)
@@ -119,7 +134,7 @@ function StatsPage() {
         setLoading(false);
       });
     return () => { mounted = false; };
-  }, [device, period]);
+  }, [activeDeviceId, period]);
 
   const stats = useMemo(() => computeStats(rows), [rows]);
   const hasData = rows.length > 0;
@@ -132,11 +147,33 @@ function StatsPage() {
     return "Conduite risquée";
   };
 
+  const exportCsv = () => {
+    if (!rows.length) return;
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = "recorded_at,lat,lng,speed_kmh,battery_main,gps_source\n";
+    const body = rows.map((r) =>
+      [r.recorded_at, r.lat, r.lng, r.speed_kmh ?? "", r.battery_main ?? "", r.gps_source ?? ""].map(esc).join(","),
+    ).join("\n");
+    const blob = new Blob(["﻿" + header + body], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `autotrack-stats-${period.replace(/ /g, "_")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const KPIS = [
     { label: "Total km", value: `${stats.totalKm.toFixed(1)}` },
     { label: "Temps de conduite", value: hasData ? fmtDuration(stats.drivingMin) : "—" },
-    { label: "Trajets", value: `${trips.length}` },
+    { label: "Trajets", value: `${stats.tripCount}` },
     { label: "Vitesse max", value: hasData ? `${Math.round(stats.maxSpeed)} km/h` : "—" },
+    { label: "Heures moteur", value: hasData ? `${stats.engineHours}h` : "—" },
   ];
 
   const SUBSCORES = [
@@ -155,7 +192,17 @@ function StatsPage() {
       />
 
       <div className="p-4 md:p-8 pb-24 max-w-7xl mx-auto space-y-6">
-        {/* Period */}
+        {/* Device selector + Period */}
+        <div className="flex flex-wrap items-center gap-3">
+          <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} showAll allLabel="Toute la flotte" />
+          {hasData && (
+            <button
+              onClick={exportCsv}
+              className="h-8 px-3 rounded-md bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1.5"
+            >
+              <Download className="size-3.5" /> CSV
+            </button>
+          )}
         <div className="flex bg-[var(--bg-surface)] rounded-md p-1 w-fit border border-[var(--border)]">
           {periods.map((p) => (
             <button
@@ -167,8 +214,9 @@ function StatsPage() {
             </button>
           ))}
         </div>
+        </div>
 
-        {!device ? (
+        {!activeDeviceId ? (
           <div className="card-elev p-4 text-xs text-[var(--text-secondary)] text-center">
             Aucun tracker associé à ce compte.
           </div>
@@ -282,6 +330,7 @@ function StatsPage() {
             </div>
           </div>
         </div>
+
       </div>
     </AppShell>
   );

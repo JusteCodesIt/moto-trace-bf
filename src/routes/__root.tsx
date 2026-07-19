@@ -2,14 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
   createRootRouteWithContext,
-  useRouter,
   HeadContent,
   Scripts,
   Link,
 } from "@tanstack/react-router";
-import { Toaster } from "react-hot-toast";
+import { useEffect } from "react";
 import { ThemeProvider } from "@/lib/theme";
 import { SplashScreen } from "@/components/SplashScreen";
+import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { AuthGate } from "@/lib/auth";
 
 import appCss from "../styles.css?url";
@@ -34,19 +34,35 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+// Purge le service worker + les caches puis recharge. Necessaire pour les
+// erreurs de chargement de module (chunk hashe supprime apres un
+// redeploiement) : un simple router.invalidate() re-importe le meme chunk 404
+// et boucle. Ce reset complet garantit de recuperer une coquille a jour.
+async function hardRecover() {
+  try {
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if (typeof caches !== "undefined") {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {
+    // ignore : on recharge quoi qu'il arrive
+  }
+  window.location.reload();
+}
+
+function ErrorComponent({ error }: { error: Error; reset: () => void }) {
   console.error(error);
-  const router = useRouter();
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg-base)] px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold">Erreur de chargement</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">{error.message}</p>
         <button
-          onClick={() => {
-            router.invalidate();
-            reset();
-          }}
+          onClick={() => void hardRecover()}
           className="mt-6 rounded-md bg-[var(--accent-primary)] px-4 py-2 text-sm font-medium text-[var(--bg-base)]"
         >
           Réessayer
@@ -74,6 +90,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:type", content: "website" },
     ],
     links: [
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "stylesheet", href: appCss },
       {
         rel: "stylesheet",
@@ -89,9 +106,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className="dark">
+    <html lang="fr" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("autotrack-theme");document.documentElement.className=t==="light"?"light":"dark"}catch(e){}` }} />
       </head>
       <body>
         {children}
@@ -103,6 +121,33 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if ("serviceWorker" in navigator) {
+      // updateViaCache "none" : le navigateur re-verifie /sw.js sur le reseau
+      // a chaque chargement -> une nouvelle version du SW est adoptee vite.
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch((err) => {
+        console.error("SW registration failed:", err);
+      });
+    }
+
+    // Chunk hashe introuvable apres un redeploiement : Vite emet
+    // "vite:preloadError". On recharge une fois (coquille a jour), avec un
+    // garde-fou anti-boucle (au plus 1 rechargement / 10 s).
+    const onPreloadError = () => {
+      const KEY = "autotrack:preload-reload";
+      const last = Number(sessionStorage.getItem(KEY) || "0");
+      if (Date.now() - last > 10000) {
+        sessionStorage.setItem(KEY, String(Date.now()));
+        window.location.reload();
+      }
+    };
+    window.addEventListener("vite:preloadError", onPreloadError);
+    return () => window.removeEventListener("vite:preloadError", onPreloadError);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
@@ -110,17 +155,7 @@ function RootComponent() {
         <AuthGate>
           <Outlet />
         </AuthGate>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: "var(--bg-elevated)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-active)",
-              fontSize: "13px",
-            },
-          }}
-        />
+        <PwaInstallPrompt />
       </ThemeProvider>
     </QueryClientProvider>
   );

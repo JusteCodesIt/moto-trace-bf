@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { haversineKm } from "./geo";
 import type { Trip } from "./store";
 
 export interface TripPoint {
@@ -18,17 +19,9 @@ type TripRow = {
   recorded_at: string;
 };
 
-// Capte les sauts de position (device hors-ligne puis reconnecté loin) sans les compter comme distance parcourue
 const MAX_HOP_KM = 3;
 const MIN_TRIP_DURATION_MIN = 2;
 const MIN_TRIP_DISTANCE_KM = 0.2;
-
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371, toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 function coordLabel(lat: number, lng: number) {
   return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -113,6 +106,34 @@ export async function getTripPath(deviceId: string, trip: Trip): Promise<TripPoi
     speed: r.speed_kmh ?? 0,
     heading: r.heading ?? 0,
     t: Math.round((new Date(r.recorded_at).getTime() - trip.date) / 1000),
+  }));
+}
+
+/**
+ * Récupère TOUT le tracé d'un appareil entre deux instants (trajet complet du
+ * véhicule, en fonction de la date/heure — pas segmenté par trajet).
+ */
+export async function getDeviceJourneyPath(
+  deviceId: string,
+  fromISO: string,
+  toISO: string,
+): Promise<TripPoint[]> {
+  const { data } = await supabase
+    .from("telemetry")
+    .select("lat,lng,speed_kmh,heading,recorded_at")
+    .eq("device_id", deviceId)
+    .gte("recorded_at", fromISO)
+    .lte("recorded_at", toISO)
+    .order("recorded_at", { ascending: true })
+    .limit(10000);
+  if (!data) return [];
+  const t0 = new Date(fromISO).getTime();
+  return data.map((r: any) => ({
+    lat: r.lat,
+    lng: r.lng,
+    speed: r.speed_kmh ?? 0,
+    heading: r.heading ?? 0,
+    t: Math.round((new Date(r.recorded_at).getTime() - t0) / 1000),
   }));
 }
 

@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/PageHeader";
 import { SectionHero } from "@/components/SectionHero";
 import { useApp } from "@/lib/store";
 import { relTime } from "@/lib/format";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { confirm, notify } from "@/components/ConfirmDialog";
 import { supabase } from "@/integrations/supabase/client";
 import illusAlerts from "@/assets/illus-alerts.png";
@@ -15,7 +15,15 @@ export const Route = createFileRoute("/alerts")({
   component: AlertsPage,
 });
 
-const FILTERS = ["Tous", "Chocs", "Mouvement", "Géozone", "Batterie", "Signal", "Vitesse"] as const;
+const FILTERS = ["Tous", "Chocs", "Freinage", "Géozone", "Retournement", "Anomalie"] as const;
+
+const KIND_MAP: Record<string, readonly string[]> = {
+  Chocs:         ["imu_shock"],
+  Freinage:      ["imu_brake"],
+  Géozone:       ["geofence_exit", "geofence_enter"],
+  Retournement:  ["imu_rollover"],
+  Anomalie:      ["anomaly"],
+};
 
 const sevColor: Record<string, string> = {
   critical: "var(--accent-red)",
@@ -28,8 +36,24 @@ function AlertsPage() {
   const visible = alerts;
   const unread = unreadAlerts();
   const [filter, setFilter] = useState<string>("Tous");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 20;
 
-  const filtered = filter === "Tous" ? visible : visible.filter((a) => a.title.toLowerCase().includes(filter.toLowerCase()));
+  const { filtered, paged, totalPages, counts } = useMemo(() => {
+    const f = filter === "Tous"
+      ? visible
+      : visible.filter((a) => KIND_MAP[filter]?.includes(a.type) ?? false);
+    const tp = Math.ceil(f.length / PAGE_SIZE);
+    const safePage = Math.min(page, Math.max(0, tp - 1));
+    const p = f.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+    const c = { shock: 0, brake: 0, geo: 0 };
+    for (const a of visible) {
+      if (a.type === "imu_shock") c.shock++;
+      else if (a.type === "imu_brake") c.brake++;
+      else if (a.type === "geofence_exit" || a.type === "geofence_enter") c.geo++;
+    }
+    return { filtered: f, paged: p, totalPages: tp, counts: c };
+  }, [visible, filter, page]);
   const riskScore = Math.min(100, unread * 12);
 
   const onMarkAll = async () => {
@@ -65,26 +89,28 @@ function AlertsPage() {
   };
 
   const onLocate = (lat: number, lng: number) => {
-    window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank");
+    window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank", "noopener,noreferrer");
   };
 
   return (
     <AppShell>
-      <div className="p-4 md:p-8 pb-24 max-w-6xl mx-auto">
-        <SectionHero
-          eyebrow="Centre d'alertes"
-          icon={Bell}
-          title={`${unread} alerte${unread !== 1 ? "s" : ""} non lue${unread !== 1 ? "s" : ""} demandent votre attention`}
-          description="Surveillez les chocs, mouvements suspects, sorties de géozone et anomalies batterie en temps réel. Chaque action critique vous demande confirmation."
-          image={illusAlerts}
-          actions={
-            unread > 0 && (
-              <button onClick={onMarkAll} className="h-10 px-4 rounded-md bg-[var(--accent-primary)] text-[var(--accent-milk)] text-xs font-semibold inline-flex items-center gap-2 hover:opacity-90">
-                <CheckCheck className="size-4" /> Tout marquer lu
-              </button>
-            )
-          }
-        />
+      <div className="p-4 md:p-6 pb-24 max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="size-9 rounded-lg bg-[var(--accent-red)]/10 grid place-items-center">
+              <Bell className="size-4 text-[var(--accent-red)]" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">Alertes</h1>
+              <p className="text-xs text-[var(--text-secondary)]">{unread} non lue{unread !== 1 ? "s" : ""} · chocs, géozone, anomalies</p>
+            </div>
+          </div>
+          {unread > 0 && (
+            <button onClick={onMarkAll} className="h-8 px-3 rounded-lg bg-[var(--accent-primary)] text-[var(--accent-milk)] text-xs font-medium inline-flex items-center gap-1.5 hover:opacity-90">
+              <CheckCheck className="size-3.5" /> Tout lu
+            </button>
+          )}
+        </div>
 
         {/* Risk score + counts */}
         <div className="grid md:grid-cols-4 gap-3 mb-6">
@@ -98,9 +124,9 @@ function AlertsPage() {
             </div>
           </div>
           {[
-            { label: "Chocs", value: alerts.filter((a) => a.type === "shock").length, color: "var(--accent-red)" },
-            { label: "Mouvements", value: alerts.filter((a) => a.type === "movement").length, color: "var(--accent-amber)" },
-            { label: "Géozone", value: alerts.filter((a) => a.type === "geofence").length, color: "var(--accent-cyan)" },
+            { label: "Chocs", value: counts.shock, color: "var(--accent-red)" },
+            { label: "Freinages", value: counts.brake, color: "var(--accent-amber)" },
+            { label: "Géozone", value: counts.geo, color: "var(--accent-cyan)" },
           ].map((c) => (
             <div key={c.label} className="card-elev p-4">
               <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">{c.label}</div>
@@ -116,7 +142,7 @@ function AlertsPage() {
           {FILTERS.map((f) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => { setFilter(f); setPage(0); }}
               className={`h-8 px-3 rounded-md text-xs transition-colors ${filter === f ? "bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]" : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
             >
               {f}
@@ -128,8 +154,8 @@ function AlertsPage() {
         {filtered.length === 0 ? (
           <EmptyState icon={Shield} title="Tout est tranquille" description="Aucune alerte sur cette période." />
         ) : (
-          <div className="space-y-2">
-            {filtered.map((a) => (
+          <div className="space-y-2" aria-live="polite" aria-relevant="additions">
+            {paged.map((a) => (
               <div
                 key={a.id}
                 className={`card-elev p-4 flex items-start gap-4 border-l-4 ${a.read ? "opacity-60" : ""}`}
@@ -181,6 +207,28 @@ function AlertsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="h-8 px-3 rounded-md bg-[var(--bg-surface)] border border-[var(--border)] text-xs disabled:opacity-40"
+            >
+              Précédent
+            </button>
+            <span className="text-xs text-[var(--text-secondary)] mono">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1), p + 1))}
+              disabled={page >= totalPages - 1}
+              className="h-8 px-3 rounded-md bg-[var(--bg-surface)] border border-[var(--border)] text-xs disabled:opacity-40"
+            >
+              Suivant
+            </button>
           </div>
         )}
       </div>

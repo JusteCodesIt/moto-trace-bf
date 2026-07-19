@@ -39,7 +39,11 @@ export interface LiveDevice {
   gsmCarrier:    string;
   gpsSource:     string | null;
   timestamp:     number; // ms epoch
+  /** Recent traveled route (oldest → newest), used to draw the vehicle's itinerary. */
+  trail:         Array<{ lat: number; lng: number }>;
 }
+
+const MAX_TRAIL = 60;
 
 // ── Store Zustand ──────────────────────────────────────────────────────────
 
@@ -78,15 +82,15 @@ interface FleetRow {
 
 function rowToDevice(
   row: FleetRow,
-  prevName?: string,
-  prevOnline?: boolean,
-  prevVehicleType?: string | null,
+  prev?: LiveDevice,
 ): LiveDevice {
+  const point = { lat: row.lat, lng: row.lng };
+  const trail = prev?.trail ? [...prev.trail.slice(-(MAX_TRAIL - 1)), point] : [point];
   return {
     id:            row.device_id,
-    name:          row.name ?? prevName ?? row.device_id.slice(0, 8),
-    isOnline:      row.is_online ?? prevOnline ?? false,
-    vehicleType:   row.vehicle_type ?? prevVehicleType ?? null,
+    name:          row.name ?? prev?.name ?? row.device_id.slice(0, 8),
+    isOnline:      row.is_online ?? prev?.isOnline ?? false,
+    vehicleType:   row.vehicle_type ?? prev?.vehicleType ?? null,
     lat:           row.lat,
     lng:           row.lng,
     heading:       row.heading ?? 0,
@@ -98,6 +102,7 @@ function rowToDevice(
     gsmCarrier:    row.gsm_carrier ?? "—",
     gpsSource:     row.gps_source ?? null,
     timestamp:     new Date(row.recorded_at).getTime(),
+    trail,
   };
 }
 
@@ -154,8 +159,8 @@ export async function startMultiDeviceMap(): Promise<void> {
         const row = payload.new as FleetRow | undefined;
         if (!row?.device_id) return;
         const current = useMultiDevice.getState().devices;
-        const prev = current[row.device_id];
-        pendingBatch[row.device_id] = rowToDevice(row, prev?.name, prev?.isOnline, prev?.vehicleType);
+        const prev = current[row.device_id] ?? pendingBatch[row.device_id];
+        pendingBatch[row.device_id] = rowToDevice(row, prev);
         scheduleFlush();
       },
     )

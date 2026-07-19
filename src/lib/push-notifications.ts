@@ -63,7 +63,7 @@ export async function subscribePush(): Promise<{
     if (existing) return { sub: existing };
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
     });
     return { sub };
   } catch (e) {
@@ -98,7 +98,7 @@ export async function saveSubscriptionToDb(sub: PushSubscription): Promise<void>
       auth: keys?.auth ?? "",
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "user_id" },
+    { onConflict: "user_id,endpoint" },
   );
 }
 
@@ -108,5 +108,12 @@ export async function deleteSubscriptionFromDb(): Promise<void> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return;
-  await (supabase as any).from("push_subscriptions").delete().eq("user_id", user.id);
+  const existing = await getExistingSubscription();
+  if (existing) {
+    await (supabase as any).from("push_subscriptions").delete()
+      .eq("user_id", user.id)
+      .eq("endpoint", existing.endpoint);
+  } else {
+    await (supabase as any).from("push_subscriptions").delete().eq("user_id", user.id);
+  }
 }

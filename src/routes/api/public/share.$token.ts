@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { checkShareRate, extractIp } from "@/lib/rate-limiter";
 
 /**
  * Public read-only endpoint backing /share/$token.
@@ -18,7 +19,11 @@ export const Route = createFileRoute("/api/public/share/$token")({
   server: {
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: CORS }),
-      GET: async ({ params }) => {
+      GET: async ({ params, request }) => {
+        const ip = extractIp(request);
+        if (!checkShareRate(ip)) {
+          return json({ error: "rate_limited" }, 429);
+        }
         const { token } = params;
 
         const { data: link } = await supabaseAdmin

@@ -17,7 +17,10 @@ export async function startRealtime(deviceId: string) {
   const since = new Date(Date.now() - TRIP_HISTORY_HOURS * 3600_000).toISOString();
   const [{ data: lastT }, { data: zones }, { data: alerts }, { data: dev }, { data: trail }, { data: history }] = await Promise.all([
     supabase.from("telemetry").select("*").eq("device_id", deviceId).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("geofences").select("*").eq("device_id", deviceId),
+    // All of the account's geofences (RLS filters by owner) so every zone —
+    // e.g. the city-wide perimeter — is visible on the dashboard, not just the
+    // selected device's.
+    supabase.from("geofences").select("*"),
     supabase.from("alerts").select("*").eq("device_id", deviceId).order("created_at", { ascending: false }).limit(100),
     supabase.from("devices").select("*").eq("id", deviceId).maybeSingle(),
     supabase.from("telemetry").select("lat,lng").eq("device_id", deviceId)
@@ -45,7 +48,9 @@ export async function startRealtime(deviceId: string) {
         if (p.eventType === "UPDATE") useApp.getState().updateAlert(rowToAlert(p.new));
         if (p.eventType === "DELETE") useApp.getState().removeAlert((p.old as any).id);
       })
-    .on("postgres_changes", { event: "*", schema: "public", table: "geofences", filter: `device_id=eq.${deviceId}` },
+    // No device filter: geofences are account-wide (RLS scopes them to the
+    // owner), so every zone change — device-bound or fleet-wide — is picked up.
+    .on("postgres_changes", { event: "*", schema: "public", table: "geofences" },
       (p) => {
         if (p.eventType === "DELETE") useApp.getState().removeZone((p.old as any).id);
         else useApp.getState().upsertZone(rowToZone(p.new));
@@ -62,6 +67,35 @@ export async function startRealtime(deviceId: string) {
 export async function stopRealtime() {
   started = false;
   if (channel) { await supabase.removeChannel(channel); channel = null; }
+  if (fleetAlertChannel) { await supabase.removeChannel(fleetAlertChannel); fleetAlertChannel = null; }
+  fleetAlertsStarted = false;
+}
+
+let fleetAlertsStarted = false;
+let fleetAlertChannel: ReturnType<typeof supabase.channel> | null = null;
+
+export async function startFleetAlerts() {
+  if (fleetAlertsStarted) return;
+  fleetAlertsStarted = true;
+
+  // Load ALL alerts across all devices (RLS filters by owner)
+  const { data: allAlerts } = await supabase
+    .from("alerts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (allAlerts) useApp.getState().setAlerts(allAlerts.map(rowToAlert));
+
+  // Subscribe to ALL alert changes (RLS ensures only own devices)
+  fleetAlertChannel = supabase
+    .channel("fleet-alerts")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "alerts" },
+      (p) => { useApp.getState().pushAlert(rowToAlert(p.new)); })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "alerts" },
+      (p) => { useApp.getState().updateAlert(rowToAlert(p.new)); })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "alerts" },
+      (p) => { useApp.getState().removeAlert((p.old as any).id); })
+    .subscribe();
 }
 
 function rowToTelemetry(r: any) {

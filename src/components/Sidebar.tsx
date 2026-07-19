@@ -13,6 +13,8 @@ import {
   PanelLeftClose,
   MoreHorizontal,
   Truck,
+  Wrench,
+  FileUp,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -23,7 +25,9 @@ const items = [
   { to: "/fleet", label: "Flotte", icon: Truck },
   { to: "/trips", label: "Trajets", icon: Route },
   { to: "/alerts", label: "Alertes", icon: Bell, badge: true },
+  { to: "/maintenance", label: "Maintenance", icon: Wrench },
   { to: "/geofence", label: "Géozone", icon: MapPin },
+  { to: "/gpx", label: "GPX", icon: FileUp },
   { to: "/remote", label: "Contrôle", icon: Power },
   { to: "/stats", label: "Stats", icon: BarChart3 },
   { to: "/settings", label: "Paramètres", icon: Settings },

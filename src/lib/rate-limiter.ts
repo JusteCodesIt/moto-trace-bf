@@ -29,6 +29,13 @@ class SlidingWindow {
     return true;
   }
 
+  remaining(key: string, limit: number, windowMs: number): number {
+    const now = Date.now();
+    const prev = this.buckets.get(key) ?? [];
+    const alive = prev.filter((t) => now - t < windowMs);
+    return Math.max(0, limit - alive.length);
+  }
+
   // Prunes stale buckets every 5 minutes to prevent unbounded Map growth
   // inside a long-lived CF Worker isolate.
   private maybeCleanup(windowMs: number) {
@@ -47,6 +54,7 @@ const ipBurst   = new SlidingWindow(); // 10 req / 5 s  per IP
 const ipMinute  = new SlidingWindow(); // 60 req / 60 s per IP
 const devMinute = new SlidingWindow(); // 30 req / 60 s per device
 const shareIp   = new SlidingWindow(); // 120 req / 60 s per IP (share endpoint)
+const alertDev  = new SlidingWindow(); // 10 alerts / 60 s per device
 
 export type RateLimitDenial = {
   allowed: false;
@@ -82,6 +90,18 @@ export function checkDeviceIngestRate(deviceId: string): { allowed: true } | Rat
  */
 export function checkShareRate(ip: string): boolean {
   return shareIp.allow(ip, 120, 60_000);
+}
+
+/**
+ * Check alert generation rate per device.
+ * Returns true if the device is allowed to generate more alerts.
+ */
+export function checkAlertRate(deviceId: string, count: number): boolean {
+  if (alertDev.remaining(deviceId, 10, 60_000) < count) return false;
+  for (let i = 0; i < count; i++) {
+    alertDev.allow(deviceId, 10, 60_000);
+  }
+  return true;
 }
 
 /**

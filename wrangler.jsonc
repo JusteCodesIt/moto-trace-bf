@@ -1,7 +1,33 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tanstack-start-app",
+  "name": "autotrack",
+  "account_id": "ecc5bdd9f3ae94bcedd33bc1186da901",
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "src/server.ts",
+  "main": "dist/server/server.js",
+  "assets": {
+    "directory": "dist/client"
+  },
+  "vars": {
+    "SUPABASE_URL": "https://ugsdzvdoqztrwrnsdiqz.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnc2R6dmRvcXp0cndybnNkaXF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODM4MDksImV4cCI6MjA5ODI1OTgwOX0.GQ9TxiCcpoiYupDTxb0Lh9YDZ2er4BcC6rCKDKWz1Zo"
+  }
+
+  // ------------------------------------------------------------------
+  // Proxy HTTP pour SIM800L (pas de TLS)
+  //
+  // Le domaine *.workers.dev force HTTPS (301). Pour accepter du HTTP
+  // brut depuis le firmware, il faut un domaine custom Cloudflare :
+  //
+  // 1. Ajouter un domaine dans Cloudflare Dashboard (ex: fasomebo.com)
+  // 2. Creer un enregistrement CNAME : api -> autotrack.codinghub.workers.dev
+  // 3. Decommenter la section "routes" ci-dessous et remplacer le domaine
+  // 4. Dans Dashboard > SSL/TLS > Edge Certificates : desactiver "Always Use HTTPS"
+  // 5. Deployer : npm run build && npx wrangler deploy
+  // 6. Mettre a jour secrets.h : INGEST_ENDPOINT "http://api.fasomebo.com/api/public/ingest"
+  //
+  // "routes": [
+  //   { "pattern": "api.fasomebo.com/*", "zone_name": "fasomebo.com" }
+  // ]
+  // ------------------------------------------------------------------
 }
