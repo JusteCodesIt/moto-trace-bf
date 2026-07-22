@@ -122,7 +122,7 @@ export function SplashScreen() {
       aria-hidden={leaving}
       className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden pointer-events-none"
       style={{
-        background: "#06070d",
+        background: "#0B1020",
         opacity: leaving ? 0 : 1,
         transition: `opacity ${FADE_OUT}ms cubic-bezier(0.22, 1, 0.36, 1)`,
       }}
@@ -131,7 +131,7 @@ export function SplashScreen() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at center, rgba(0,229,255,0.15) 0%, rgba(6,7,13,0) 55%)",
+            "radial-gradient(ellipse at center, rgba(91,123,255,0.20) 0%, rgba(11,16,32,0) 58%)",
         }}
       />
       <div className="relative z-10 flex flex-col items-center gap-6 px-6">
@@ -140,7 +140,7 @@ export function SplashScreen() {
           alt="AutoTrack"
           className={isRoute ? "w-[140px] h-auto" : "w-[240px] md:w-[300px] h-auto"}
           style={{
-            filter: "drop-shadow(0 8px 32px rgba(0,229,255,0.4))",
+            filter: "drop-shadow(0 8px 32px rgba(91,123,255,0.42))",
             animation: "splash-logo-in 600ms cubic-bezier(0.22,1,0.36,1) both",
           }}
         />
@@ -155,15 +155,15 @@ export function SplashScreen() {
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
               width: `${progress * 100}%`,
-              background: "linear-gradient(90deg, #00E5FF, #FFFFFF)",
-              boxShadow: "0 0 12px rgba(0,229,255,0.6)",
+              background: "linear-gradient(90deg, #2450E5, #8BA4FF)",
+              boxShadow: "0 0 12px rgba(91,123,255,0.6)",
               transition: "width 200ms cubic-bezier(0.22,1,0.36,1)",
             }}
           />
         </div>
         {!isRoute && (
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.32em] text-white/60 mono">
-            <span className="inline-block size-1.5 rounded-full bg-[#00E5FF] animate-pulse" />
+            <span className="inline-block size-1.5 rounded-full bg-[#5B7BFF] animate-pulse" />
             Initialisation du tracker
           </div>
         )}
