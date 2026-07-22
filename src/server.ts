@@ -87,8 +87,35 @@ function withSecurityHeaders(response: Response): Response {
   });
 }
 
+// Tailscale injects this header only for requests from authenticated VPN peers.
+// Public internet requests via Funnel never carry it → used to restrict Funnel
+// traffic to the ingest endpoint only.
+const PUBLIC_API_RE = /^\/api\/public\//;
+
+function publicAccessGuard(request: Request): Response | null {
+  // Development / local runs are never gated — the guard only hardens the
+  // public Tailscale Funnel. In production PM2 sets NODE_ENV=production, so the
+  // gate below stays fully active for real internet traffic.
+  if (process.env.NODE_ENV !== "production") return null;
+
+  const hasTailscaleUser = request.headers.has("Tailscale-User-Login");
+  if (hasTailscaleUser) return null; // your own Tailscale device → full access
+
+  const { pathname } = new URL(request.url);
+  if (PUBLIC_API_RE.test(pathname)) return null; // ingest/share → allow
+
+  // Public internet (Funnel) + non-public path → block
+  return new Response(JSON.stringify({ error: "forbidden" }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const blocked = publicAccessGuard(request);
+    if (blocked) return withSecurityHeaders(blocked);
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
